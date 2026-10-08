@@ -18,6 +18,10 @@ const mesh = vg.createMesh(data, material, {
 scene.add(mesh);
 ```
 
+Instance matrices are in **world space**. Keep the VirtualMesh object itself (and its parents) at the origin, with no
+rotation or scale, and place instances only through their matrices: culling and level of detail use the matrices, so
+a transform on the mesh object would make them cull the wrong places.
+
 `fromBufferGeometry` welds vertices (keeping UV seams), computes smooth normals and keeps UVs and vertex colors. If
 you already have arrays, pass a `VirtualMeshSource` (`positions`, `normals`, `indices`, optional `uvs` and
 `colors`) straight to `buildVirtualMeshCached`.

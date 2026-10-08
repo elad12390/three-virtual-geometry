@@ -25,6 +25,7 @@ export default defineConfig({
         text: 'Guide',
         items: [
           { text: 'Getting started', link: '/guide/getting-started' },
+          { text: 'Use it from a CDN', link: '/guide/cdn' },
           { text: 'Importing models (glTF)', link: '/guide/import' },
           { text: 'Meshes and instances', link: '/guide/meshes' },
           { text: 'Settings and levers', link: '/guide/settings' },

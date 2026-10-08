@@ -36,6 +36,34 @@ Rules:
 - To undo: result.dispose().
 - In custom node materials use vgUv (not uv()) and vgWorldNormal.
 
+## Without npm (CDN, plain HTML)
+
+All-in-one build (contains three.js WebGPU build as THREE, TSL, GLTFLoader, OrbitControls, RoomEnvironment). Do not
+load three.js a second time on the same page:
+
+```html
+<script type="module">
+  import { THREE, VirtualGeometry, GLTFLoader, OrbitControls } from
+    'https://cdn.jsdelivr.net/npm/three-virtual-geometry@0.1/dist/three-virtual-geometry.all.min.js';
+</script>
+```
+
+Minimal build (no three.js inside; needs an import map that comes before any module script):
+
+```html
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+  "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+  "three-virtual-geometry": "https://cdn.jsdelivr.net/npm/three-virtual-geometry@0.1/dist/three-virtual-geometry.min.js"
+} }
+</script>
+```
+
+Pages must be served over https or http://localhost (not file://). Full guide: https://elad12390.github.io/three-virtual-geometry/guide/cdn
+
 ## Geometry made in code
 
 ```ts

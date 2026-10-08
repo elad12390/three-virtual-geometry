@@ -6,7 +6,15 @@ you can see: about one per pixel, wherever you are.
 [**Live demo**](https://elad12390.github.io/three-virtual-geometry/live) ·
 [**Docs**](https://elad12390.github.io/three-virtual-geometry/) ·
 [API](https://elad12390.github.io/three-virtual-geometry/api) ·
+[Use it from a CDN](#use-it-from-a-cdn-no-build-step) ·
 [Set it up with your AI agent](#set-it-up-with-your-ai-agent)
+
+**Measured results** (uncapped, no vsync, shadows on; MacBook Pro with an M4 Pro, Chrome 154):
+
+- **5.7 billion triangles** in the ruins scene at **160 to 230 FPS** at 1080p, and 103 to 158 FPS at 4K.
+- **37.5 billion triangles in 3 million instances** (a 6 km world) at **147 to 150 FPS** at 1080p.
+- **1 million instances** (39.5 billion triangles) at **177 FPS** or more at 1080p.
+- **Over 100 FPS in every scene and camera view, even at 4K**, with at most 0.6 ms of CPU time per frame.
 
 ![An ancient city of 5.7 billion triangles drawn with about 8 million](docs/public/screenshots/ruins-wide.jpg)
 
@@ -44,6 +52,23 @@ npm install three-virtual-geometry three
 ```
 
 Needs three.js r180+ and a browser with WebGPU (Chrome or Edge 113+, Safari 26+, Firefox 141+ on Windows).
+
+### Use it from a CDN (no build step)
+
+No npm needed: one import in a plain HTML file. The all-in-one build includes three.js, `GLTFLoader`,
+`OrbitControls` and `RoomEnvironment`:
+
+```html
+<script type="module">
+  import { THREE, VirtualGeometry, GLTFLoader } from
+    'https://cdn.jsdelivr.net/npm/three-virtual-geometry@0.1/dist/three-virtual-geometry.all.min.js';
+  // ... same code as below, with THREE from this import
+</script>
+```
+
+Already using three.js on the page? The minimal build (`dist/three-virtual-geometry.min.js`) leaves three.js out and
+uses yours through an import map. The [CDN guide](https://elad12390.github.io/three-virtual-geometry/guide/cdn)
+has complete pages for both, every line explained.
 
 ## Use it
 

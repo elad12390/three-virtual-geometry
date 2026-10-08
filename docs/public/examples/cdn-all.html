@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>three-virtual-geometry from a CDN (all-in-one build)</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee; font: 14px/1.5 system-ui, sans-serif; }
+      canvas { display: block; }
+      #status { position: fixed; left: 12px; top: 10px; pointer-events: none; text-shadow: 0 1px 4px #000; }
+    </style>
+
+  </head>
+  <body>
+    <div id="status">Loading…</div>
+
+    <!-- Your code: a module script (type="module"), so it can use import. -->
+    <script type="module">
+      // 1. One import: the all-in-one build contains three-virtual-geometry, three.js (WebGPU build, as THREE),
+      //    meshoptimizer, GLTFLoader, OrbitControls and RoomEnvironment. No import map, nothing else to load.
+      import {
+        THREE,
+        VirtualGeometry,
+        GLTFLoader,
+        OrbitControls,
+        RoomEnvironment,
+      } from 'https://cdn.jsdelivr.net/npm/three-virtual-geometry@0.1/dist/three-virtual-geometry.all.min.js';
+
+      const status = document.getElementById('status');
+
+      // WebGPU is required. Without it, say so instead of failing silently.
+      if (!navigator.gpu) {
+        status.textContent = 'This browser has no WebGPU. Use Chrome or Edge 113+, or Safari 26+.';
+        throw new Error('WebGPU not available');
+      }
+
+      // A normal three.js WebGPU setup.
+      const renderer = new THREE.WebGPURenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      document.body.appendChild(renderer.domElement);
+      await renderer.init(); // must finish before the first render
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xc9d3dc);
+      scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+      const sun = new THREE.DirectionalLight(0xffffff, 2);
+      sun.position.set(30, 50, 20);
+      scene.add(sun);
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardNodeMaterial({ color: 0x3a3d42 }));
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+      const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 1000);
+      camera.position.set(14, 9, 34);
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      // 2. One VirtualGeometry for the whole app.
+      const vg = new VirtualGeometry();
+
+      // 3. Load a model as usual. (Taxi from the Kenney Car Kit, CC0, hosted with these docs.)
+      const url = 'https://elad12390.github.io/three-virtual-geometry/demo/models/kenney-car-kit/taxi.glb';
+      const gltf = await new GLTFLoader().loadAsync(url);
+
+      //    Place 400 copies. vg.add() notices they share geometry and draws them as one instanced mesh.
+      const city = new THREE.Group();
+      for (let x = 0; x < 20; x++) {
+        for (let z = 0; z < 20; z++) {
+          const taxi = gltf.scene.clone();
+          taxi.position.set((x - 9.5) * 3, 0, (z - 9.5) * 5);
+          taxi.rotation.y = Math.random() * Math.PI * 2;
+          city.add(taxi);
+        }
+      }
+
+      //    Hand it to vg.add() before adding it to the scene: every static mesh inside becomes virtual geometry,
+      //    with its materials and textures. It resolves once the meshes are built.
+      status.textContent = 'Building…';
+      await vg.add(city, { onProgress: (f) => (status.textContent = `Building… ${Math.round(f * 100)}%`) });
+      scene.add(city);
+
+      // 4. Optional: compile GPU pipelines now, so the first frames don't stutter.
+      await vg.compileAsync(renderer, scene, camera);
+
+      addEventListener('resize', () => {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+      });
+
+      // 5. Render as usual. Level of detail and culling run automatically before every render.
+      renderer.setAnimationLoop(() => {
+        controls.update();
+        renderer.render(scene, camera);
+      });
+
+      // Optional: show what the GPU draws. vg.lastStats refreshes every few frames.
+      setInterval(() => {
+        const s = vg.lastStats;
+        if (s) status.textContent = `${s.drawnTriangles.toLocaleString()} of ${s.fullDetailTriangles.toLocaleString()} triangles drawn · drag to orbit, scroll to zoom`;
+      }, 500);
+    </script>
+  </body>
+</html>

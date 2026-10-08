@@ -40,7 +40,7 @@
     }
   },
   "bin": {
-    "vg-bake": "./dist/bake.mjs"
+    "vg-bake": "dist/bake.mjs"
   },
   "files": [
     "dist",
@@ -54,7 +54,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build --config vite.lib.config.ts && tsc -p tsconfig.build.json && npm run build:cli",
+    "build": "vite build --config vite.lib.config.ts && tsc -p tsconfig.build.json && npm run build:cli && npm run build:cdn",
     "build:demo": "vite build",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
@@ -64,7 +64,8 @@
     "bake": "node scripts/bake.mjs",
     "build:cli": "esbuild scripts/bake.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/bake.mjs --external:three --external:meshoptimizer \"--banner:js=#!/usr/bin/env node\"",
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
-    "bench": "node scripts/bench.mjs"
+    "bench": "node scripts/bench.mjs",
+    "build:cdn": "node scripts/build-cdn.mjs"
   },
   "peerDependencies": {
     "three": ">=0.180.0"
@@ -82,5 +83,7 @@
     "vite": "^8.3.3",
     "vitepress": "^1.6.4",
     "vitest": "^5.0.3"
-  }
+  },
+  "jsdelivr": "dist/three-virtual-geometry.all.min.js",
+  "unpkg": "dist/three-virtual-geometry.all.min.js"
 }
