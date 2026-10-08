@@ -64,6 +64,22 @@ jobs:
             npm publish --ignore-scripts
           fi
 
+      # jsDelivr and unpkg serve straight from npm, so the new version is on both CDNs as soon as npm has it. URLs with
+      # an exact version (@0.1.2) are new and work at once; jsDelivr caches range URLs (@0.1, @0, @latest, none) for up
+      # to 12 hours, so purge those so they serve the new version now. unpkg refreshes ranges within minutes.
+      - name: Refresh jsDelivr range URLs
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          major="${version%%.*}"
+          minor="$(echo "$version" | cut -d. -f1-2)"
+          for range in "" "@latest" "@$major" "@$minor"; do
+            for file in "" /dist/three-virtual-geometry.all.min.js /dist/three-virtual-geometry.min.js /dist/index.js /package.json; do
+              url="https://purge.jsdelivr.net/npm/three-virtual-geometry$range$file"
+              status="$(curl -s -o /dev/null -w '%{http_code}' "$url" || true)"
+              echo "$status $url"
+            done
+          done
+
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
