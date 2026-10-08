@@ -1,6 +1,6 @@
 {
   "name": "three-virtual-geometry",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Virtual geometry for three.js WebGPU: automatic cluster LOD and GPU-driven culling for billions of triangles. Independent implementation, not affiliated with Epic Games.",
   "keywords": [
     "three",
@@ -63,9 +63,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "bake": "node scripts/bake.mjs",
     "build:cli": "esbuild scripts/bake.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/bake.mjs --external:three --external:meshoptimizer \"--banner:js=#!/usr/bin/env node\"",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run check:types",
     "bench": "node scripts/bench.mjs",
-    "build:cdn": "node scripts/build-cdn.mjs"
+    "build:cdn": "node scripts/build-cdn.mjs",
+    "check:types": "attw --pack . --profile esm-only"
   },
   "peerDependencies": {
     "three": ">=0.180.0"
@@ -74,6 +75,7 @@
     "meshoptimizer": "^1.3.0"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@types/three": "^0.186.0",
     "@webgpu/types": "^0.1.74",
     "esbuild": "^0.28.2",

@@ -25,7 +25,7 @@
  */
 import * as THREE from 'three/webgpu';
 import { Fn, If, Return, ceil, clamp, exp2, float, floor, instanceIndex, int, ivec2, log2, max, min, select, storage, texture, uint, uniform, vec3, vec4 } from 'three/tsl';
-import type { VirtualMesh } from './VirtualMesh';
+import type { VirtualMesh } from './VirtualMesh.js';
 
 /** Upper bound on mip levels (maxSize up to 32768). */
 const MAX_LEVELS = 16;

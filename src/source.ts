@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import type { VirtualMeshSource } from './core/preprocess/buildVirtualMesh';
+import type { VirtualMeshSource } from './core/preprocess/buildVirtualMesh.js';
 
 type Attribute = THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
 

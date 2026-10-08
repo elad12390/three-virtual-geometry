@@ -6,12 +6,12 @@
  * is built once. Skinned and morphing meshes, points, lines and sprites are left alone and keep rendering.
  */
 import * as THREE from 'three/webgpu';
-import { buildVirtualMeshCached } from '../io/cache';
-import { buildVirtualMesh, type VirtualMeshBuildOptions, type VirtualMeshData, type VirtualMeshSource } from '../preprocess/buildVirtualMesh';
-import { fromBufferGeometry } from '../../source';
-import type { VirtualGeometry } from '../runtime/VirtualGeometry';
-import type { VirtualMesh, VirtualMeshOptions } from '../runtime/VirtualMesh';
-import { canConvertToNodeMaterial, toNodeMaterial } from './toNodeMaterial';
+import { buildVirtualMeshCached } from '../io/cache.js';
+import { buildVirtualMesh, type VirtualMeshBuildOptions, type VirtualMeshData, type VirtualMeshSource } from '../preprocess/buildVirtualMesh.js';
+import { fromBufferGeometry } from '../../source.js';
+import type { VirtualGeometry } from '../runtime/VirtualGeometry.js';
+import type { VirtualMesh, VirtualMeshOptions } from '../runtime/VirtualMesh.js';
+import { canConvertToNodeMaterial, toNodeMaterial } from './toNodeMaterial.js';
 
 /** Builds one DAG. Same signature as `buildVirtualMesh`, so a caching builder drops in here or via `options.builder`. */
 export type VirtualGeometryBuilder = (source: VirtualMeshSource, options?: VirtualMeshBuildOptions) => Promise<VirtualMeshData>;

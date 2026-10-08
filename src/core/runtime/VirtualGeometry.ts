@@ -1,13 +1,13 @@
 import * as THREE from 'three/webgpu';
 import { uniform } from 'three/tsl';
-import type { VirtualMesh, VirtualMeshInstances, VirtualMeshOptions } from './VirtualMesh';
-import { OcclusionCulling } from './OcclusionCulling';
-import { VirtualMesh as VirtualMeshClass } from './VirtualMesh';
-import type { VirtualMeshData } from '../preprocess/buildVirtualMesh';
-import { GeometryPool, NO_DRAW_DISTANCE, type PoolCapacity } from './GeometryPool';
-import { virtualMeshesFromObject3D, type VirtualGeometryImport, type VirtualGeometryImportOptions } from '../import/fromObject3D';
+import type { VirtualMesh, VirtualMeshInstances, VirtualMeshOptions } from './VirtualMesh.js';
+import { OcclusionCulling } from './OcclusionCulling.js';
+import { VirtualMesh as VirtualMeshClass } from './VirtualMesh.js';
+import type { VirtualMeshData } from '../preprocess/buildVirtualMesh.js';
+import { GeometryPool, NO_DRAW_DISTANCE, type PoolCapacity } from './GeometryPool.js';
+import { virtualMeshesFromObject3D, type VirtualGeometryImport, type VirtualGeometryImportOptions } from '../import/fromObject3D.js';
 
-export { VG_DEBUG_MODES } from '../constants';
+export { VG_DEBUG_MODES } from '../constants.js';
 
 /** Length of the camera + settings vector compared by `VirtualGeometry.cutInputsChanged`. */
 const CUT_INPUT_COUNT = 16 + 16 + 12;

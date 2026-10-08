@@ -15,8 +15,8 @@
  * deflate, whichever is smallest per field. `indices` is not stored: it is rebuilt from the meshlet arrays.
  */
 import { MeshoptDecoder, MeshoptEncoder } from 'meshoptimizer';
-import { MESHLET_INFO_STRIDE } from '../constants';
-import type { VirtualMeshData } from '../preprocess/buildVirtualMesh';
+import { MESHLET_INFO_STRIDE } from '../constants.js';
+import type { VirtualMeshData } from '../preprocess/buildVirtualMesh.js';
 
 /** Bumped whenever the container layout or an encoding changes; older readers reject newer files. */
 export const VG_FORMAT_VERSION = 1;

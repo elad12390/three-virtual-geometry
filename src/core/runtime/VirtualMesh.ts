@@ -7,9 +7,9 @@
  */
 import * as THREE from 'three/webgpu';
 import { cameraViewMatrix, faceDirection, hash, materialColor, normalize, select, vec3, vec4 } from 'three/tsl';
-import { VG_DEBUG_MODES } from '../constants';
-import type { VirtualMeshData } from '../preprocess/buildVirtualMesh';
-import type { VirtualGeometry } from './VirtualGeometry';
+import { VG_DEBUG_MODES } from '../constants.js';
+import type { VirtualMeshData } from '../preprocess/buildVirtualMesh.js';
+import type { VirtualGeometry } from './VirtualGeometry.js';
 import {
   CELL_SIZE,
   NO_DRAW_DISTANCE,
@@ -21,10 +21,10 @@ import {
   vgWorldNormal,
   type GeometryPool,
   type PoolEntry,
-} from './GeometryPool';
-import { bindVirtualGeometryTextures } from './vgMaterial';
+} from './GeometryPool.js';
+import { bindVirtualGeometryTextures } from './vgMaterial.js';
 
-export { vgWorldNormal, encodeOctNormal, packVertices, packUvs } from './GeometryPool';
+export { vgWorldNormal, encodeOctNormal, packVertices, packUvs } from './GeometryPool.js';
 
 export interface VirtualMeshInstances {
   /** 16 floats (column-major Matrix4) per instance. */

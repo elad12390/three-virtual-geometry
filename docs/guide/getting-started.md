@@ -38,6 +38,45 @@ That installs the library and three.js. The only other dependency, [meshoptimize
 The package is a standard ES module and works with every modern bundler: Vite, webpack 5, Rollup, esbuild,
 Parcel, and the frameworks built on them.
 
+## TypeScript
+
+Type declarations are included in the package: there is no separate `@types` package for three-virtual-geometry.
+three.js itself ships without types, so install its community types once, matching your three.js version (every
+three.js TypeScript project needs this):
+
+```bash
+npm install -D @types/three
+```
+
+Then everything is typed: `VirtualGeometry` and its settings, the options of `vg.add` and `vg.createMesh` (with
+autocompletion and checking), the returned `VirtualMesh` and `VirtualGeometryImport`, the stats from `readStats`, and
+the build and file-format functions. The option and result types are exported for your own code:
+
+```ts
+import {
+  VirtualGeometry,
+  type VirtualGeometryOptions,      // new VirtualGeometry(options)
+  type VirtualGeometryImportOptions, // vg.add(object, options)
+  type VirtualGeometryImport,       // what vg.add returns
+  type VirtualMeshOptions,          // vg.createMesh(..., options)
+  type VirtualMeshInstances,        // { matrices, colors? }
+  type VirtualGeometryStats,        // what vg.readStats returns
+} from 'three-virtual-geometry';
+```
+
+**`tsconfig.json`.** Use `"moduleResolution": "bundler"` (the default in Vite's templates), `"node16"` or
+`"nodenext"`. All three are checked automatically before every release, in `strict` mode and without
+`skipLibCheck`. The legacy `"node"` (`"node10"`) setting can't resolve `three/webgpu` for any project, so it doesn't
+work with three.js's WebGPU build. The package is ES modules only: use `import`, not `require()`.
+
+**Plain JavaScript** gets the same editor help: VS Code and other editors read the bundled types for autocompletion
+and inline documentation, and `// @ts-check` at the top of a file turns on type checking.
+
+**Without a bundler.** If you load the library from a CDN with an import map (the
+[minimal build](/guide/cdn#minimal-bring-your-own-three-js)), your code imports `'three/webgpu'` and
+`'three-virtual-geometry'` by name. Install both packages and `@types/three` as dev dependencies, and TypeScript and
+your editor pick up the types for those names, while the browser loads the files from the CDN.
+
 ## Your first scene
 
 Load a glTF model and hand it to `VirtualGeometry`. This is a complete program:

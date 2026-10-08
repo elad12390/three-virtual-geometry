@@ -1,5 +1,5 @@
-import { ERROR_INFINITY, FAST_PATH_MARGIN, FAST_PATH_MAX_MESHLETS, MESHLET_BOUNDS_STRIDE } from '../constants';
-import type { VirtualMeshData } from '../preprocess/buildVirtualMesh';
+import { ERROR_INFINITY, FAST_PATH_MARGIN, FAST_PATH_MAX_MESHLETS, MESHLET_BOUNDS_STRIDE } from '../constants.js';
+import type { VirtualMeshData } from '../preprocess/buildVirtualMesh.js';
 
 /** Camera parameters the LOD test needs. Same values the GPU pass uses. */
 export interface CutView {

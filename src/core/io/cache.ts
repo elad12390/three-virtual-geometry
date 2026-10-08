@@ -3,8 +3,8 @@
  * source arrays and build options. The first load builds and stores the encoded result; later loads decode
  * it. Any cache problem (no IndexedDB, private mode, quota, corrupt entry) falls back to building.
  */
-import { buildVirtualMesh, type VirtualMeshBuildOptions, type VirtualMeshData, type VirtualMeshSource } from '../preprocess/buildVirtualMesh';
-import { decodeVirtualMesh, encodeVirtualMesh, VG_FORMAT_VERSION } from './serialize';
+import { buildVirtualMesh, type VirtualMeshBuildOptions, type VirtualMeshData, type VirtualMeshSource } from '../preprocess/buildVirtualMesh.js';
+import { decodeVirtualMesh, encodeVirtualMesh, VG_FORMAT_VERSION } from './serialize.js';
 
 /**
  * Part of every cache key. Bump it whenever `buildVirtualMesh` produces different output for the same input

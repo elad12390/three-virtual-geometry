@@ -63,10 +63,10 @@ import {
   workgroupBarrier,
   workgroupId,
 } from 'three/tsl';
-import { ERROR_INFINITY, FAST_PATH_MARGIN, FAST_PATH_MAX_MESHLETS, MAX_MESHLET_VERTICES, MESHLET_BOUNDS_STRIDE, MESHLET_INFO_STRIDE } from '../constants';
-import type { VirtualMeshData } from '../preprocess/buildVirtualMesh';
-import type { VirtualGeometry } from './VirtualGeometry';
-import { vgUv } from './vgMaterial';
+import { ERROR_INFINITY, FAST_PATH_MARGIN, FAST_PATH_MAX_MESHLETS, MAX_MESHLET_VERTICES, MESHLET_BOUNDS_STRIDE, MESHLET_INFO_STRIDE } from '../constants.js';
+import type { VirtualMeshData } from '../preprocess/buildVirtualMesh.js';
+import type { VirtualGeometry } from './VirtualGeometry.js';
+import { vgUv } from './vgMaterial.js';
 
 const minNode = min as (a: unknown, b: unknown) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
 const maxNode = max as (a: unknown, b: unknown) => any; // eslint-disable-line @typescript-eslint/no-explicit-any

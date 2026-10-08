@@ -16,9 +16,9 @@ import {
   MAX_MESHLET_VERTICES,
   MESHLET_BOUNDS_STRIDE,
   MESHLET_INFO_STRIDE,
-} from '../constants';
-import { partitionMeshlets } from './partition';
-import { buildVoxelProxy, VOXEL_ERROR_CELLS, type VoxelProxy } from './voxelProxy';
+} from '../constants.js';
+import { partitionMeshlets } from './partition.js';
+import { buildVoxelProxy, VOXEL_ERROR_CELLS, type VoxelProxy } from './voxelProxy.js';
 
 export interface VirtualMeshSource {
   /** xyz per vertex */
