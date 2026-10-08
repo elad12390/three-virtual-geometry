@@ -96,6 +96,17 @@ export class DemoApp {
     this.gui.add(this.settings, 'frustumCulling').name('frustum culling');
     this.gui.add(this.settings, 'freezeLOD').name('freeze LOD/culling');
     this.gui.add(this.settings, 'uncapped').name('uncapped fps (no vsync)').onChange(() => this.start());
+
+    // Embedded in the docs (?embed): compact HUD, settings collapsed, and the page can pause rendering.
+    if (new URLSearchParams(location.search).has('embed')) {
+      document.body.classList.add('embed');
+      this.gui.close();
+    }
+    window.addEventListener('message', (e) => {
+      if (e.source !== window.parent || window.parent === window) return;
+      if (e.data?.vg === 'pause') this.pause();
+      else if (e.data?.vg === 'resume') this.resume();
+    });
   }
 
   async init() {
@@ -139,8 +150,13 @@ export class DemoApp {
    * the refresh rate, but the FPS counter reports how many frames the GPU can actually render.
    */
   start() {
+    this.started = true;
     this.loopToken++;
     const token = this.loopToken;
+    if (this.paused) {
+      this.renderer.setAnimationLoop(null);
+      return;
+    }
     let last = performance.now();
     const step = () => {
       const now = performance.now();
@@ -168,6 +184,22 @@ export class DemoApp {
   }
 
   private loopToken = 0;
+  private started = false;
+  private paused = false;
+
+  /** Stops rendering (e.g. while an embedding page has the demo scrolled out of view). Loading continues. */
+  pause() {
+    this.paused = true;
+    this.loopToken++;
+    this.renderer.setAnimationLoop(null);
+  }
+
+  resume() {
+    if (!this.paused) return;
+    this.paused = false;
+    this.lastFrameTime = 0;
+    if (this.started) this.start();
+  }
 
   /** One frame: settings -> VirtualGeometry LOD/culling on the GPU -> render. Used by the loop and the benchmark. */
   renderFrame(dt = 1 / 60) {

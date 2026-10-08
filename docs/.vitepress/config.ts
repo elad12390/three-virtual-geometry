@@ -7,7 +7,7 @@ export default defineConfig({
   base: '/three-virtual-geometry/',
   cleanUrls: true,
   lastUpdated: true,
-  // The live demo is a separate Vite app copied into /demo/ at deploy time.
+  // The demo is a separate Vite app copied into /demo/ at deploy time and embedded in /live by DemoPlayer.vue.
   ignoreDeadLinks: [/\/demo\//],
   head: [
     ['link', { rel: 'icon', href: '/three-virtual-geometry/favicon.svg', type: 'image/svg+xml' }],
@@ -18,7 +18,7 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'API', link: '/api' },
-      { text: 'Live demo', link: 'https://elad12390.github.io/three-virtual-geometry/demo/?scene=ruins&tour', target: '_blank' },
+      { text: 'Live demo', link: '/live' },
     ],
     sidebar: [
       {

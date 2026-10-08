@@ -18,7 +18,7 @@ npm test             # vitest: DAG invariants, partitioner, serialization, impor
 npm run typecheck    # tsc --noEmit
 npm run build        # library (dist/index.js + .d.ts) and the vg-bake CLI (dist/bake.mjs)
 npm run build:demo   # demo into dist-demo/
-npm run docs:dev     # VitePress docs site
+npm run docs:dev     # VitePress docs site; the embedded demo player (/live) loads the demo from `npm run dev`
 ```
 
 GPU code can only be checked in a WebGPU browser. After runtime changes, load the demo scenes and check the console

@@ -11,7 +11,7 @@ hero:
   actions:
     - theme: brand
       text: Try the live demo
-      link: https://elad12390.github.io/three-virtual-geometry/demo/?scene=ruins&tour
+      link: /live
     - theme: alt
       text: Get started
       link: /guide/getting-started
@@ -50,7 +50,7 @@ mesh.
   <img src="/screenshots/ruins-wide.jpg" alt="An ancient city of 5.7 billion triangles: temples, streets, walls, hills and trees">
   <figcaption>The showcase scene: 5.7 billion full-detail triangles in 113,000 instances, where every paving stone,
   column flute and carving is real geometry. About 5 million triangles are drawn per frame.
-  <a href="https://elad12390.github.io/three-virtual-geometry/demo/?scene=ruins&tour" target="_blank">Open it live</a>.</figcaption>
+  <a href="#live-demos">Run it below</a>.</figcaption>
 </figure>
 
 ## Results
@@ -76,17 +76,12 @@ stay roughly constant as scenes grow, because detail follows screen pixels.
 
 ## Live demos
 
-All demos run in your browser (Chrome, Edge or Safari 26+ with WebGPU). The first load builds the scene's
-cluster hierarchies; later loads come from the browser cache.
+Every scene runs right here, in your browser, with WebGPU (Chrome, Edge or Safari 26+). Pick one and press run. Only
+the selected scene runs, and it pauses when you scroll away. The first load builds the scene's cluster hierarchies;
+later loads come from the browser cache. The left panel shows what the GPU is doing, and the settings panel on the
+right holds the levers.
 
-- <a href="https://elad12390.github.io/three-virtual-geometry/demo/?scene=ruins&tour" target="_blank">Ruins showcase with fly-through</a>
-- <a href="https://elad12390.github.io/three-virtual-geometry/demo/?scene=world" target="_blank">World: 6 km, 3 million instances</a>
-- <a href="https://elad12390.github.io/three-virtual-geometry/demo/?scene=map" target="_blank">Valley: 2 km map</a>
-- <a href="https://elad12390.github.io/three-virtual-geometry/demo/?scene=import" target="_blank">glTF import: textured cars</a>
-- <a href="https://elad12390.github.io/three-virtual-geometry/demo/?scene=stress&count=1000000" target="_blank">Stress test: 1 million instances</a>
-
-In every demo, the panel on the right holds the levers (detail threshold, budget, debug views) and the panel on the
-left shows what the GPU is doing.
+<DemoPlayer />
 
 ## How it works
 

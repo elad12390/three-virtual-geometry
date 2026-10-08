@@ -86,3 +86,29 @@
   --vp-button-alt-border: transparent;
   --vp-c-default-soft: rgba(232, 228, 218, 0.08);
 }
+
+/* Live demo page: wide, no sidebar. */
+.live-page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+.live-page h1 {
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.live-page p {
+  color: var(--vp-c-text-2);
+  line-height: 1.7;
+  max-width: 880px;
+}
+.live-page a {
+  color: var(--vp-c-brand-1);
+}
+/* On the home page the player breaks out of the narrow paper column. */
+.paper .demo-player {
+  width: min(1200px, calc(100vw - 48px));
+  margin-left: 50%;
+  transform: translateX(-50%);
+}

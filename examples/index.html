@@ -97,8 +97,15 @@
       }
       .lil-gui .title { font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
 
+      /* ---------- embedded in the docs (?embed) ---------- */
+      body.embed #stats { left: 12px; top: 12px; transform: scale(0.7); transform-origin: top left; }
+      body.embed .lil-gui.root { top: 12px !important; right: 12px !important; }
+      body.embed .lil-gui { --width: 280px; }
+      body.embed #hint { bottom: 14px; }
+
       @media (max-width: 900px), (max-height: 700px) {
         #stats { transform: scale(0.78); transform-origin: top left; }
+        body.embed #stats { transform: scale(0.6); }
         body .lil-gui { --width: 270px; }
         #hint { display: none; }
       }

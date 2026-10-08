@@ -3,7 +3,7 @@
 **Virtual geometry for three.js WebGPU.** Put in your models at full detail. The engine draws only the triangles
 you can see: about one per pixel, wherever you are.
 
-[**Live demo**](https://elad12390.github.io/three-virtual-geometry/demo/?scene=ruins&tour) ·
+[**Live demo**](https://elad12390.github.io/three-virtual-geometry/live) ·
 [**Docs**](https://elad12390.github.io/three-virtual-geometry/) ·
 [API](https://elad12390.github.io/three-virtual-geometry/api) ·
 [Set it up with your AI agent](#set-it-up-with-your-ai-agent)
