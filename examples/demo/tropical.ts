@@ -130,7 +130,7 @@ function frond(b: Builder, o: FrondOptions, transform: THREE.Matrix4) {
   }
 }
 
-/** Coconut palm, 7 to 13 m: leaning ringed trunk, 14 to 18 fronds, a cluster of coconuts. About 60k triangles. */
+/** Coconut palm, 7 to 13 m: leaning ringed trunk, 12 to 15 fronds, a cluster of coconuts. About 25k triangles. */
 export function makePalm(seed: number): VirtualMeshSource {
   const rand = mulberry32(seed);
   const b = new Builder();
@@ -175,7 +175,7 @@ export function makePalm(seed: number): VirtualMeshSource {
   }
 
   // Crown: fronds radiating out and arching down, the youngest pointing up.
-  const fronds = 14 + Math.floor(rand() * 5);
+  const fronds = 12 + Math.floor(rand() * 4);
   for (let i = 0; i < fronds; i++) {
     const azimuth = (i / fronds) * Math.PI * 2 + rand() * 0.3;
     const elevation = 0.75 - (i % 3) * 0.35 - rand() * 0.25; // three tiers: up, out, drooping
@@ -187,9 +187,9 @@ export function makePalm(seed: number): VirtualMeshSource {
       b,
       {
         length: 3.6 + rand() * 1.2,
-        leaflets: 52 + Math.floor(rand() * 10),
-        leafletLength: 0.85,
-        leafletWidth: 0.045,
+        leaflets: 32 + Math.floor(rand() * 6),
+        leafletLength: 0.9,
+        leafletWidth: 0.065,
         droop: 0.55 + rand() * 0.3,
         vee: 0.35,
         base: new THREE.Color(0x3d6b25),

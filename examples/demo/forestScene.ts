@@ -43,6 +43,7 @@ export async function createForestScene(app: DemoApp) {
   // Keep detail: the engine may coarsen to at most 3 px to stay inside its draw buffers. A packed jungle draws far
   // more than the default 10M triangles per pool, so its pools (created below) get 40M, when the device allows it.
   vg.maxErrorThreshold = 3;
+  vg.errorThreshold.value = 3; // where the packed jungle settles anyway: start there, so the first frames don't overflow
   const device = (renderer.backend as unknown as { device?: GPUDevice }).device;
   if (device && device.limits.maxStorageBufferBindingSize >= 40_000_000 * 12) {
     Object.assign((vg as unknown as { capacity: object }).capacity, { triangles: 40_000_000, shadowTriangles: 8_000_000 });
