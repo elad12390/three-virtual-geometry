@@ -5,3 +5,6 @@ docs/.vitepress/dist
 docs/.vitepress/cache
 *.log
 .DS_Store
+
+# Downloaded scan data for the scans demo (npm run demo:scans)
+examples/scans

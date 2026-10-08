@@ -26,7 +26,7 @@ await clearVirtualMeshCache();                                                 /
 Bake models ahead of time with the CLI that comes with the package:
 
 ```bash
-npx vg-bake model.glb -o public/baked/model   # also .gltf and .obj; flags: --prune, --no-voxel, --no-deflate
+npx vg-bake model.glb -o public/baked/model   # also .gltf, .obj, .stl and .ply; flags: --prune, --no-voxel, --no-deflate
 ```
 
 It writes one `.vgeo` file per unique geometry and a `manifest.json` with each file's instance transforms and

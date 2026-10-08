@@ -1,7 +1,7 @@
 /**
  * Offline baking, run through scripts/bake.mjs (which bundles this file for Node):
  *
- *   node scripts/bake.mjs model.glb|model.gltf|model.obj [-o outDir] [--prune] [--no-voxel] [--no-deflate]
+ *   node scripts/bake.mjs model.glb|model.gltf|model.obj|model.stl|model.ply [-o outDir] [--prune] [--no-voxel] [--no-deflate]
  *
  * Writes one .vgeo file per unique geometry plus manifest.json (files, instance transforms, basic material
  * values). Geometry only: textures and UVs are skipped, vertex colors are not carried over, normals are
@@ -13,10 +13,12 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 import { MeshoptDecoder } from 'meshoptimizer';
 import { buildVirtualMesh, encodeVirtualMesh, fromBufferGeometry, VG_FORMAT_VERSION, type VirtualMeshBuildOptions } from '../src/index';
 
-const USAGE = 'usage: npx vg-bake <model.glb|model.gltf|model.obj> [-o outDir] [--prune] [--no-voxel] [--no-deflate]';
+const USAGE = 'usage: npx vg-bake <model.glb|model.gltf|model.obj|model.stl|model.ply> [-o outDir] [--prune] [--no-voxel] [--no-deflate]';
 
 function parseArgs(argv: string[]) {
   const args = { input: '', outDir: '', build: {} as VirtualMeshBuildOptions, deflate: true };
@@ -57,7 +59,14 @@ function serveFileUrls() {
 async function load(path: string): Promise<THREE.Object3D> {
   const ext = extname(path).toLowerCase();
   if (ext === '.obj') return new OBJLoader().parse(readFileSync(path, 'utf8'));
-  if (ext !== '.glb' && ext !== '.gltf') throw new Error(`unsupported file type ${ext} (expected .glb, .gltf or .obj)`);
+  if (ext === '.stl' || ext === '.ply') {
+    // Single-mesh scan formats: one geometry, positions only (normals are recomputed when building).
+    const file = readFileSync(path);
+    const bytes = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
+    const geometry = ext === '.stl' ? new STLLoader().parse(bytes) : new PLYLoader().parse(bytes);
+    return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial());
+  }
+  if (ext !== '.glb' && ext !== '.gltf') throw new Error(`unsupported file type ${ext} (expected .glb, .gltf, .obj, .stl or .ply)`);
   serveFileUrls();
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);

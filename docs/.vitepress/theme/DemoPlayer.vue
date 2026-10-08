@@ -12,9 +12,14 @@ interface DemoScene {
   key: string;
   name: string;
   stat: string;
-  query: string;
+  /** Demo URL query; scenes without one are shown as a recorded video. */
+  query?: string;
+  /** Recorded video (for scenes too large to download from a web page). */
+  video?: string;
   poster: string;
   description: string;
+  /** Why this scene is a video, and how to run it. */
+  note?: string;
 }
 
 const scenes: DemoScene[] = [
@@ -61,6 +66,16 @@ const scenes: DemoScene[] = [
     poster: '/screenshots/stress.jpg',
     description: 'A million instances on a flat field, 39 billion full-detail triangles, culled in cells of 128 on the GPU.',
   },
+  {
+    key: 'scans',
+    name: 'Real scans',
+    stat: 'video · 2 GB of scans',
+    video: '/videos/scans.mp4',
+    poster: '/screenshots/scans.jpg',
+    description:
+      'Real 3D scans, the kind of data virtual geometry was made for, shown as a museum: 723 statues from 14 scans of classical sculpture, 1 to 4 million triangles each (SMK, National Gallery of Denmark, public domain), and 40 photoscanned rocks and cliffs (Poly Haven, CC0). 2.1 billion triangles, drawn with about a million per frame.',
+    note: 'Recorded, because the scans are about 2 GB: too much to download just by opening a page. To run it live, clone the repository and run npm run demo:scans. It downloads the scans once and opens the scene.',
+  },
 ];
 
 // In `docs:dev` the demo runs on its own Vite server (npm run dev); in the build it is copied to /demo/.
@@ -74,6 +89,7 @@ const stage = ref<HTMLElement | null>(null);
 const frame = ref<HTMLIFrameElement | null>(null);
 const src = computed(() => `${demoBase}?${scene.value.query}&embed`);
 const standalone = computed(() => `${demoBase}?${scene.value.query}`);
+const video = ref<HTMLVideoElement | null>(null);
 
 let visible = true;
 let observer: IntersectionObserver | null = null;
@@ -108,6 +124,7 @@ onMounted(() => {
     ([entry]) => {
       visible = entry.isIntersecting;
       post(visible ? 'resume' : 'pause');
+      if (video.value) visible ? video.value.play().catch(() => {}) : video.value.pause();
       if (visible && props.autoplay) run();
     },
     { threshold: 0.15 }
@@ -135,8 +152,21 @@ onBeforeUnmount(() => observer?.disconnect());
     </div>
 
     <div ref="stage" class="stage">
+      <video
+        v-if="scene.video"
+        ref="video"
+        :key="scene.video"
+        :src="withBase(scene.video)"
+        :poster="withBase(scene.poster)"
+        controls
+        muted
+        loop
+        playsinline
+        autoplay
+        preload="metadata"
+      />
       <iframe
-        v-if="running"
+        v-else-if="running"
         ref="frame"
         :key="src"
         :src="src"
@@ -159,10 +189,14 @@ onBeforeUnmount(() => observer?.disconnect());
     </div>
 
     <div class="meta">
-      <p>{{ scene.description }}</p>
+      <div>
+        <p>{{ scene.description }}</p>
+        <p v-if="scene.note" class="why">{{ scene.note }}</p>
+      </div>
       <div class="actions">
-        <button v-if="running" @click="fullscreen">Fullscreen</button>
-        <a :href="standalone" target="_blank" rel="noopener">Open in a new tab ↗</a>
+        <button v-if="running || scene.video" @click="fullscreen">Fullscreen</button>
+        <a v-if="scene.query" :href="standalone" target="_blank" rel="noopener">Open in a new tab ↗</a>
+        <a v-else :href="withBase('/guide/performance#real-scans')">How to run it ↗</a>
       </div>
     </div>
   </div>
@@ -223,6 +257,14 @@ onBeforeUnmount(() => observer?.disconnect());
   max-height: none;
   border-radius: 0;
 }
+.stage video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0c0c0d;
+}
 .stage iframe {
   position: absolute;
   inset: 0;
@@ -280,6 +322,11 @@ onBeforeUnmount(() => observer?.disconnect());
   font-size: 14px;
   line-height: 1.6;
   color: var(--vp-c-text-2);
+}
+.meta .why {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--vp-c-text-3);
 }
 .actions {
   display: flex;
