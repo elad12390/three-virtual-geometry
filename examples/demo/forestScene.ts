@@ -1,5 +1,5 @@
 /**
- * Jungle island: procedural coconut palms, broadleaf trees, banana plants and ferns (every leaflet real geometry),
+ * Jungle island: procedural coconut palms, banana plants and ferns (every leaflet real geometry),
  * with CC0 shrubs and ground cover from Poly Haven, scattered by the thousand over hills that fall away to the sea,
  * all swaying in the wind.
  *
@@ -15,7 +15,6 @@ import type { BenchPose } from './bench';
 import { buildVirtualMeshCached, type VirtualMeshData } from '../../src/index';
 import { mulberry32, Perlin, smoothstep } from './noise';
 import { makeBanana, makeFern, makePalm } from './tropical';
-import { makeBroadleaf } from './assets';
 import { makeTour, type TourKey } from './tour';
 
 const BASE = 'scans/forest/';
@@ -158,7 +157,7 @@ export async function createForestScene(app: DemoApp) {
   const density = (x: number, z: number) => (1 - clearingWeight(x, z)) * (1 - pathWeight(x, z)) * (0.65 + 0.35 * smoothstep(-0.35, 0.25, perlin.fbm2(x / 90 + 7, z / 90, 3)));
 
   /** Procedural plants (palms, bananas, ferns): instance matrices per variant, turned into virtual meshes below. */
-  const procedural = { palm: [[], [], [], [], [], []], broadleaf: [[], [], [], []], banana: [[], [], [], [], []], fern: [[], [], [], []] } as Record<string, number[][]>;
+  const procedural = { palm: [[], [], [], [], [], []], banana: [[], [], [], [], []], fern: [[], [], [], []] } as Record<string, number[][]>;
   const plantProcedural = (kind: string, x: number, z: number, scale: number, sink = 0.1) => {
     const list = procedural[kind][Math.floor(random() * procedural[kind].length)];
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, heightAt(x, z) - sink, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), random() * Math.PI * 2), new THREE.Vector3(scale, scale, scale));
@@ -166,8 +165,7 @@ export async function createForestScene(app: DemoApp) {
   };
   const onLand = (x: number, z: number) => land(x, z) > 0.55 && heightAt(x, z) > 0.8;
 
-  // Canopy: leafy broadleaf trees (scaled up to 11 to 20 m) and coconut palms, by rejection sampling thinned by
-  // density. Palms also line the coast.
+  // Canopy: coconut palms, by rejection sampling thinned by density, out to the coast.
   for (let i = 0, tries = 0; i < canopyCount && tries < canopyCount * 30; tries++) {
     const x = (random() * 2 - 1) * (EXTENT + 60);
     const z = (random() * 2 - 1) * (EXTENT + 60);
@@ -175,8 +173,7 @@ export async function createForestScene(app: DemoApp) {
     const coast = 1 - smoothstep(0.55, 0.9, land(x, z));
     if (random() > Math.max(density(x, z), coast * 0.8)) continue;
     i++;
-    if (random() < 0.6 || coast > 0.3) plantProcedural('palm', x, z, 0.9 + random() * 0.35, 0.2);
-    else plantProcedural('broadleaf', x, z, 0.9 + random() * 0.6, 0.2);
+    plantProcedural('palm', x, z, 0.8 + random() * 0.5 + coast * 0.1, 0.2);
   }
   // Understory: banana clumps, jungle shrubs and young trees, thickest under and around the canopy.
   for (let i = 0; i < canopyCount; i++) {
@@ -262,8 +259,8 @@ export async function createForestScene(app: DemoApp) {
 
   // Procedural palms, bananas and ferns: a few variants each, every leaflet real geometry, instanced by the thousand.
   const leafy = new THREE.MeshStandardNodeMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.7 });
-  const makers: Record<string, (seed: number) => Parameters<typeof buildVirtualMeshCached>[0]> = { palm: makePalm, broadleaf: makeBroadleaf, banana: makeBanana, fern: makeFern };
-  const motion: Record<string, ReturnType<typeof wind>> = { palm: wind(1, 0.07), broadleaf: wind(0.8, 0.06), banana: wind(0.5, 0.05), fern: wind(0, 0.03) };
+  const makers: Record<string, (seed: number) => Parameters<typeof buildVirtualMeshCached>[0]> = { palm: makePalm, banana: makeBanana, fern: makeFern };
+  const motion: Record<string, ReturnType<typeof wind>> = { palm: wind(1, 0.07), banana: wind(0.5, 0.05), fern: wind(0, 0.03) };
   let proceduralTriangles = 0;
   let proceduralInstances = 0;
   for (const [kind, lists] of Object.entries(procedural)) {
@@ -272,10 +269,10 @@ export async function createForestScene(app: DemoApp) {
       app.progress(`Building ${kind}s…`, v / lists.length);
       // Fronds and leaves are thousands of separate pieces that simplification cannot merge: a finer voxel grid gives
       // their coarse levels a smaller error, so they switch to those levels closer to the camera.
-      const voxelResolution = kind === 'broadleaf' ? 64 : 128;
+      const voxelResolution = 128;
       const data: VirtualMeshData = await buildVirtualMeshCached(makers[kind](101 + v * 17), { voxelResolution, cache: { maxBytes: 4 * 1024 ** 3 } });
       // Beyond the haze nothing is visible: canopy trees stop at 900 m, understory plants sooner (they shrink away).
-      const maxDrawDistance = { palm: 900, broadleaf: 900, banana: 250, fern: 90 }[kind];
+      const maxDrawDistance = { palm: 900, banana: 250, fern: 90 }[kind];
       const mesh = vg.createMesh(data, leafy, { matrices: new Float32Array(matrices) }, { deform: motion[kind], maxDrawDistance });
       mesh.name = `${kind} ${v}`;
       mesh.castShadow = kind !== 'fern';
@@ -356,7 +353,7 @@ export async function createForestScene(app: DemoApp) {
   const importedTriangles = imported.meshes.reduce((a, m) => a + m.fullDetailTriangles, 0);
   app.extraStats =
     `jungle: ${(imported.stats.instances + proceduralInstances).toLocaleString()} plants, ` +
-    `${((importedTriangles + proceduralTriangles) / 1e9).toFixed(1)}B triangles (procedural palms, trees, bananas and ferns; Poly Haven CC0 shrubs and ground cover)`;
+    `${((importedTriangles + proceduralTriangles) / 1e9).toFixed(1)}B triangles (procedural palms, bananas and ferns; Poly Haven CC0 shrubs and ground cover)`;
   console.log('jungle scene', { importedTriangles, proceduralTriangles, proceduralInstances });
 }
 
