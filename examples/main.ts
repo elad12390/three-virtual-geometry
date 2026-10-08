@@ -34,7 +34,7 @@ async function main() {
     app.hideOverlay();
     app.start();
     Object.assign(window, { app, THREE }); // for debugging from the console
-    if (new URLSearchParams(location.search).has('bench')) await runBenchmark(app);
+    if (new URLSearchParams(location.search).has('bench')) await runBenchmark(app, sceneName);
   } catch (e) {
     console.error(e);
     app.progress(`Error: ${(e as Error).message}`, 0);

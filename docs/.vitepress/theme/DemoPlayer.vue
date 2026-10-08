@@ -25,7 +25,7 @@ const scenes: DemoScene[] = [
     query: 'scene=ruins&tour',
     poster: '/screenshots/ruins-wide.jpg',
     description:
-      'An ancient city where every brick, paving stone, column flute and carving is geometry: 113k instances of 23 assets, drawn with about 5M triangles a frame. The camera flies from a 2-million-triangle bronze out to the whole site; drag to take over.',
+      'An ancient city where every brick, paving stone, column flute and carving is geometry: 113k instances of 23 assets, drawn with 7 to 9M triangles a frame. The camera flies from a 2-million-triangle bronze out to the whole site; drag to take over.',
   },
   {
     key: 'world',

@@ -8,7 +8,7 @@ you can see: about one per pixel, wherever you are.
 [API](https://elad12390.github.io/three-virtual-geometry/api) ·
 [Set it up with your AI agent](#set-it-up-with-your-ai-agent)
 
-![An ancient city of 5.7 billion triangles drawn with about 5 million](docs/public/screenshots/ruins-wide.jpg)
+![An ancient city of 5.7 billion triangles drawn with about 8 million](docs/public/screenshots/ruins-wide.jpg)
 
 | | |
 | --- | --- |
@@ -16,11 +16,26 @@ you can see: about one per pixel, wherever you are.
 | ![3 million instances over 6 km](docs/public/screenshots/world.jpg) | ![Textured glTF models converted with one call](docs/public/screenshots/import.jpg) |
 
 - **One line to adopt.** `await vg.add(gltf.scene)` converts every static mesh, with its materials and textures.
-- **Billions of triangles.** The ruins scene holds 5.7 billion and draws about 5 million a frame.
+- **Billions of triangles.** The ruins scene holds 5.7 billion and draws 7 to 9 million a frame, at 160 to 230 FPS
+  at 1080p on a MacBook Pro (M4 Pro).
 - **No visible LOD switching.** Detail changes cluster by cluster, below one pixel of error. No hand-made LODs.
 - **GPU-driven.** Frustum, size and occlusion culling and level selection run in compute shaders. One draw call
   per mesh, millions of instances.
 - **Everything three.js.** Node materials, lights, shadows, fog and tone mapping work unchanged.
+
+## Benchmarks
+
+Uncapped frame rates (no vsync) on a MacBook Pro with an M4 Pro, Chrome 154, 1 px error threshold, shadows on.
+Ranges span several camera views per scene. [Details and how to run them](https://elad12390.github.io/three-virtual-geometry/guide/performance#benchmarks):
+`npm run bench`.
+
+| Scene | Full-detail triangles | Instances | Drawn per frame | FPS at 1080p | FPS at 4K |
+| --- | --- | --- | --- | --- | --- |
+| Ruins | 5.7B | 113k | 6.5M – 9.0M | 160 – 230 | 103 – 158 |
+| World (6 km) | 37.5B | 3.0M | 8.3M – 9.1M | 147 – 150 | 101 – 120 |
+| Valley (2 km) | 1.1B | 152k | 3.1M – 8.6M | 159 – 329 | 109 – 203 |
+| glTF import | 5.1M | 12k | 0.5M – 0.6M | 941 – 964 | 468 – 516 |
+| Stress, 1M instances | 39.5B | 1.0M | 0.6M – 8.4M | 177 – 1,404 | 154 – 696 |
 
 ## Install
 

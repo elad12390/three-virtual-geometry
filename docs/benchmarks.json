@@ -1,0 +1,697 @@
+{
+  "date": "2026-10-08",
+  "machine": "Apple M4 Pro, 24 GB, darwin 25.5.0",
+  "browser": "Chrome 154.0.8037.98",
+  "gpu": "apple metal-3",
+  "source": "local production build",
+  "runs": [
+    {
+      "scene": "ruins",
+      "resolution": "1080p",
+      "width": 1920,
+      "height": 1080,
+      "results": [
+        {
+          "pose": "bronze close-up",
+          "frameMs": 4.47,
+          "fps": 223,
+          "p90Ms": 4.82,
+          "cpuMs": 0.26,
+          "drawnTriangles": 6794420,
+          "shadowTriangles": 2865416,
+          "drawnMeshlets": 61253,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 9234,
+          "roundsMs": [
+            4.61,
+            4.47,
+            4.29
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "altar reliefs",
+          "frameMs": 4.49,
+          "fps": 223,
+          "p90Ms": 4.82,
+          "cpuMs": 0.25,
+          "drawnTriangles": 7160061,
+          "shadowTriangles": 2607012,
+          "drawnMeshlets": 62203,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 8024,
+          "roundsMs": [
+            4.61,
+            4.49,
+            4.45
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "sanctuary",
+          "frameMs": 6.26,
+          "fps": 160,
+          "p90Ms": 6.36,
+          "cpuMs": 0.24,
+          "drawnTriangles": 8991322,
+          "shadowTriangles": 2130984,
+          "drawnMeshlets": 87470,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 16686,
+          "roundsMs": [
+            6.26,
+            6.26,
+            6.26
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "whole city",
+          "frameMs": 4.35,
+          "fps": 230,
+          "p90Ms": 4.74,
+          "cpuMs": 0.21,
+          "drawnTriangles": 8251648,
+          "shadowTriangles": 530678,
+          "drawnMeshlets": 76832,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 10706,
+          "roundsMs": [
+            4.34,
+            4.6,
+            4.35
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "avenue",
+          "frameMs": 5.91,
+          "fps": 169,
+          "p90Ms": 6.13,
+          "cpuMs": 0.29,
+          "drawnTriangles": 8090258,
+          "shadowTriangles": 2403515,
+          "drawnMeshlets": 72857,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 9979,
+          "roundsMs": [
+            5.96,
+            5.91,
+            5.91
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "colonnade",
+          "frameMs": 5.05,
+          "fps": 198,
+          "p90Ms": 5.2,
+          "cpuMs": 0.32,
+          "drawnTriangles": 8149929,
+          "shadowTriangles": 2516895,
+          "drawnMeshlets": 76025,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 12792,
+          "roundsMs": [
+            5.05,
+            5.05,
+            5.13
+          ],
+          "occlusionShare": 1
+        }
+      ]
+    },
+    {
+      "scene": "world",
+      "resolution": "1080p",
+      "width": 1920,
+      "height": 1080,
+      "results": [
+        {
+          "pose": "start",
+          "frameMs": 6.81,
+          "fps": 147,
+          "p90Ms": 7.19,
+          "cpuMs": 0.29,
+          "drawnTriangles": 9043326,
+          "shadowTriangles": 1335877,
+          "drawnMeshlets": 135423,
+          "fullDetailTriangles": 37473514240,
+          "instances": 2967691,
+          "visibleInstances": 78187,
+          "roundsMs": [
+            6.91,
+            6.81,
+            6.81
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "aerial",
+          "frameMs": 6.66,
+          "fps": 150,
+          "p90Ms": 7.01,
+          "cpuMs": 0.27,
+          "drawnTriangles": 8252172,
+          "shadowTriangles": 954602,
+          "drawnMeshlets": 257177,
+          "fullDetailTriangles": 37473514240,
+          "instances": 2967691,
+          "visibleInstances": 214023,
+          "roundsMs": [
+            6.54,
+            6.72,
+            6.66
+          ],
+          "occlusionShare": 1
+        }
+      ]
+    },
+    {
+      "scene": "map",
+      "resolution": "1080p",
+      "width": 1920,
+      "height": 1080,
+      "results": [
+        {
+          "pose": "overview",
+          "frameMs": 3.04,
+          "fps": 329,
+          "p90Ms": 3.19,
+          "cpuMs": 0.18,
+          "drawnTriangles": 3096112,
+          "shadowTriangles": 532510,
+          "drawnMeshlets": 86069,
+          "fullDetailTriangles": 1050672288,
+          "instances": 152401,
+          "visibleInstances": 63813,
+          "roundsMs": [
+            3,
+            3.04,
+            3.04
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "tree-level",
+          "frameMs": 5.71,
+          "fps": 175,
+          "p90Ms": 5.86,
+          "cpuMs": 0.14,
+          "drawnTriangles": 8446790,
+          "shadowTriangles": 834116,
+          "drawnMeshlets": 122200,
+          "fullDetailTriangles": 1050672288,
+          "instances": 152401,
+          "visibleInstances": 61826,
+          "roundsMs": [
+            5.66,
+            5.79,
+            5.71
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "meadow",
+          "frameMs": 4.89,
+          "fps": 205,
+          "p90Ms": 5.06,
+          "cpuMs": 0.15,
+          "drawnTriangles": 6541943,
+          "shadowTriangles": 611598,
+          "drawnMeshlets": 82536,
+          "fullDetailTriangles": 1050672288,
+          "instances": 152401,
+          "visibleInstances": 35527,
+          "roundsMs": [
+            4.85,
+            4.9,
+            4.89
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "lake-shore",
+          "frameMs": 6.28,
+          "fps": 159,
+          "p90Ms": 6.46,
+          "cpuMs": 0.13,
+          "drawnTriangles": 8575156,
+          "shadowTriangles": 1253796,
+          "drawnMeshlets": 114495,
+          "fullDetailTriangles": 1050672288,
+          "instances": 152401,
+          "visibleInstances": 53884,
+          "roundsMs": [
+            6.26,
+            6.28,
+            6.38
+          ],
+          "occlusionShare": 1
+        }
+      ]
+    },
+    {
+      "scene": "import",
+      "resolution": "1080p",
+      "width": 1920,
+      "height": 1080,
+      "results": [
+        {
+          "pose": "start",
+          "frameMs": 1.04,
+          "fps": 964,
+          "p90Ms": 1.31,
+          "cpuMs": 0.88,
+          "drawnTriangles": 521578,
+          "shadowTriangles": 171009,
+          "drawnMeshlets": 9148,
+          "fullDetailTriangles": 5134967,
+          "instances": 12366,
+          "visibleInstances": 5101,
+          "roundsMs": [
+            0.98,
+            1.1,
+            1.04
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "aerial",
+          "frameMs": 1.06,
+          "fps": 941,
+          "p90Ms": 1.34,
+          "cpuMs": 0.79,
+          "drawnTriangles": 556556,
+          "shadowTriangles": 116093,
+          "drawnMeshlets": 11307,
+          "fullDetailTriangles": 5134967,
+          "instances": 12366,
+          "visibleInstances": 6967,
+          "roundsMs": [
+            1.03,
+            1.07,
+            1.06
+          ],
+          "occlusionShare": 1
+        }
+      ]
+    },
+    {
+      "scene": "stress",
+      "resolution": "1080p",
+      "width": 1920,
+      "height": 1080,
+      "results": [
+        {
+          "pose": "start",
+          "frameMs": 5.65,
+          "fps": 177,
+          "p90Ms": 5.95,
+          "cpuMs": 0.14,
+          "drawnTriangles": 8370244,
+          "shadowTriangles": 0,
+          "drawnMeshlets": 688087,
+          "fullDetailTriangles": 39489000000,
+          "instances": 1000000,
+          "visibleInstances": 648921,
+          "roundsMs": [
+            5.65,
+            5.69,
+            5.57
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "aerial",
+          "frameMs": 0.71,
+          "fps": 1404,
+          "p90Ms": 0.82,
+          "cpuMs": 0.09,
+          "drawnTriangles": 642468,
+          "shadowTriangles": 0,
+          "drawnMeshlets": 187199,
+          "fullDetailTriangles": 39489000000,
+          "instances": 1000000,
+          "visibleInstances": 187199,
+          "roundsMs": [
+            0.7,
+            0.75,
+            0.71
+          ],
+          "occlusionShare": 1
+        }
+      ]
+    },
+    {
+      "scene": "ruins",
+      "resolution": "4K",
+      "width": 3840,
+      "height": 2160,
+      "results": [
+        {
+          "pose": "bronze close-up",
+          "frameMs": 6.84,
+          "fps": 146,
+          "p90Ms": 7.3,
+          "cpuMs": 0.25,
+          "drawnTriangles": 8553950,
+          "shadowTriangles": 2251700,
+          "drawnMeshlets": 82910,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 16047,
+          "roundsMs": [
+            6.84,
+            6.88,
+            6.83
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "altar reliefs",
+          "frameMs": 6.32,
+          "fps": 158,
+          "p90Ms": 6.46,
+          "cpuMs": 0.32,
+          "drawnTriangles": 6467556,
+          "shadowTriangles": 2607012,
+          "drawnMeshlets": 55468,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 6246,
+          "roundsMs": [
+            6.32,
+            6.3,
+            6.35
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "sanctuary",
+          "frameMs": 9.7,
+          "fps": 103,
+          "p90Ms": 9.76,
+          "cpuMs": 0.24,
+          "drawnTriangles": 8979462,
+          "shadowTriangles": 2126817,
+          "drawnMeshlets": 87382,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 16686,
+          "roundsMs": [
+            9.69,
+            9.7,
+            9.7
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "whole city",
+          "frameMs": 7.34,
+          "fps": 136,
+          "p90Ms": 7.46,
+          "cpuMs": 0.22,
+          "drawnTriangles": 8247668,
+          "shadowTriangles": 529030,
+          "drawnMeshlets": 76803,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 10706,
+          "roundsMs": [
+            7.33,
+            7.34,
+            7.35
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "avenue",
+          "frameMs": 9.04,
+          "fps": 111,
+          "p90Ms": 9.2,
+          "cpuMs": 0.3,
+          "drawnTriangles": 8435617,
+          "shadowTriangles": 2403131,
+          "drawnMeshlets": 75879,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 10209,
+          "roundsMs": [
+            9.04,
+            9.01,
+            9.15
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "colonnade",
+          "frameMs": 7.4,
+          "fps": 135,
+          "p90Ms": 7.71,
+          "cpuMs": 0.59,
+          "drawnTriangles": 8611158,
+          "shadowTriangles": 2111181,
+          "drawnMeshlets": 83693,
+          "fullDetailTriangles": 5731416600,
+          "instances": 113106,
+          "visibleInstances": 15998,
+          "roundsMs": [
+            7.4,
+            7.39,
+            7.45
+          ],
+          "occlusionShare": 1
+        }
+      ]
+    },
+    {
+      "scene": "world",
+      "resolution": "4K",
+      "width": 3840,
+      "height": 2160,
+      "results": [
+        {
+          "pose": "start",
+          "frameMs": 9.89,
+          "fps": 101,
+          "p90Ms": 10.07,
+          "cpuMs": 0.24,
+          "drawnTriangles": 9059616,
+          "shadowTriangles": 1335877,
+          "drawnMeshlets": 135593,
+          "fullDetailTriangles": 37473514240,
+          "instances": 2967691,
+          "visibleInstances": 78167,
+          "roundsMs": [
+            9.89,
+            9.93,
+            9.78
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "aerial",
+          "frameMs": 8.34,
+          "fps": 120,
+          "p90Ms": 8.75,
+          "cpuMs": 0.25,
+          "drawnTriangles": 8252172,
+          "shadowTriangles": 954602,
+          "drawnMeshlets": 257177,
+          "fullDetailTriangles": 37473514240,
+          "instances": 2967691,
+          "visibleInstances": 214023,
+          "roundsMs": [
+            8.31,
+            8.34,
+            8.41
+          ],
+          "occlusionShare": 1
+        }
+      ]
+    },
+    {
+      "scene": "map",
+      "resolution": "4K",
+      "width": 3840,
+      "height": 2160,
+      "results": [
+        {
+          "pose": "overview",
+          "frameMs": 4.92,
+          "fps": 203,
+          "p90Ms": 5.16,
+          "cpuMs": 0.16,
+          "drawnTriangles": 3096112,
+          "shadowTriangles": 532510,
+          "drawnMeshlets": 86069,
+          "fullDetailTriangles": 1050672288,
+          "instances": 152401,
+          "visibleInstances": 63813,
+          "roundsMs": [
+            4.92,
+            5.11,
+            4.91
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "tree-level",
+          "frameMs": 7.29,
+          "fps": 137,
+          "p90Ms": 7.45,
+          "cpuMs": 0.18,
+          "drawnTriangles": 8191676,
+          "shadowTriangles": 834116,
+          "drawnMeshlets": 115800,
+          "fullDetailTriangles": 1050672288,
+          "instances": 152401,
+          "visibleInstances": 57228,
+          "roundsMs": [
+            7.24,
+            7.29,
+            7.36
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "meadow",
+          "frameMs": 7.6,
+          "fps": 132,
+          "p90Ms": 7.92,
+          "cpuMs": 0.13,
+          "drawnTriangles": 6541943,
+          "shadowTriangles": 611598,
+          "drawnMeshlets": 82536,
+          "fullDetailTriangles": 1050672288,
+          "instances": 152401,
+          "visibleInstances": 35527,
+          "roundsMs": [
+            7.67,
+            7.6,
+            7.24
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "lake-shore",
+          "frameMs": 9.19,
+          "fps": 109,
+          "p90Ms": 9.34,
+          "cpuMs": 0.14,
+          "drawnTriangles": 8493192,
+          "shadowTriangles": 1253796,
+          "drawnMeshlets": 112236,
+          "fullDetailTriangles": 1050672288,
+          "instances": 152401,
+          "visibleInstances": 52025,
+          "roundsMs": [
+            9.19,
+            9.16,
+            9.2
+          ],
+          "occlusionShare": 1
+        }
+      ]
+    },
+    {
+      "scene": "import",
+      "resolution": "4K",
+      "width": 3840,
+      "height": 2160,
+      "results": [
+        {
+          "pose": "start",
+          "frameMs": 1.94,
+          "fps": 516,
+          "p90Ms": 2.03,
+          "cpuMs": 1.1,
+          "drawnTriangles": 521578,
+          "shadowTriangles": 171009,
+          "drawnMeshlets": 9148,
+          "fullDetailTriangles": 5134967,
+          "instances": 12366,
+          "visibleInstances": 5101,
+          "roundsMs": [
+            1.9,
+            1.94,
+            1.94
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "aerial",
+          "frameMs": 2.14,
+          "fps": 468,
+          "p90Ms": 2.19,
+          "cpuMs": 1.01,
+          "drawnTriangles": 556556,
+          "shadowTriangles": 116093,
+          "drawnMeshlets": 11307,
+          "fullDetailTriangles": 5134967,
+          "instances": 12366,
+          "visibleInstances": 6967,
+          "roundsMs": [
+            2.14,
+            2.14,
+            2.14
+          ],
+          "occlusionShare": 1
+        }
+      ]
+    },
+    {
+      "scene": "stress",
+      "resolution": "4K",
+      "width": 3840,
+      "height": 2160,
+      "results": [
+        {
+          "pose": "start",
+          "frameMs": 6.51,
+          "fps": 154,
+          "p90Ms": 7.13,
+          "cpuMs": 0.1,
+          "drawnTriangles": 8370244,
+          "shadowTriangles": 0,
+          "drawnMeshlets": 688087,
+          "fullDetailTriangles": 39489000000,
+          "instances": 1000000,
+          "visibleInstances": 648921,
+          "roundsMs": [
+            6.92,
+            6.51,
+            6.51
+          ],
+          "occlusionShare": 1
+        },
+        {
+          "pose": "aerial",
+          "frameMs": 1.44,
+          "fps": 696,
+          "p90Ms": 1.49,
+          "cpuMs": 0.1,
+          "drawnTriangles": 642468,
+          "shadowTriangles": 0,
+          "drawnMeshlets": 187199,
+          "fullDetailTriangles": 39489000000,
+          "instances": 1000000,
+          "visibleInstances": 187199,
+          "roundsMs": [
+            1.44,
+            1.44,
+            1.45
+          ],
+          "occlusionShare": 1
+        }
+      ]
+    }
+  ]
+}

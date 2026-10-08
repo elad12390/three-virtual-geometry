@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import { VirtualGeometry, VG_DEBUG_MODES, type VirtualGeometryStats } from '../../src/index';
+import type { BenchPose } from './bench';
 
 const HUD_INTERVAL_MS = 250;
 
@@ -70,6 +71,8 @@ export class DemoApp {
   /** Scene name shown under the HUD title (HTML allowed). */
   sceneLabel = '';
   onFrame: ((dt: number) => void) | null = null;
+  /** Camera views for `?bench`; scenes may set their own (default: the start view and an aerial one). */
+  benchPoses: BenchPose[] | null = null;
 
   constructor() {
     this.renderer = new THREE.WebGPURenderer({ antialias: true, trackTimestamp: new URLSearchParams(location.search).has('timestamps') });
@@ -184,6 +187,7 @@ export class DemoApp {
   }
 
   private loopToken = 0;
+  private lastFrameId = -1;
   private started = false;
   private paused = false;
 
@@ -204,6 +208,15 @@ export class DemoApp {
   /** One frame: settings -> VirtualGeometry LOD/culling on the GPU -> render. Used by the loop and the benchmark. */
   renderFrame(dt = 1 / 60) {
     const t0 = performance.now();
+    // three.js advances its frame counter only inside setAnimationLoop, and per-frame work such as shadow maps runs
+    // once per frame id. Frames driven by hand (uncapped mode, the benchmark) must advance it themselves, or shadows
+    // are never redrawn and those frames come out cheaper than real ones.
+    const nodeFrame = (this.renderer as unknown as { _nodes: { nodeFrame: { frameId: number; update(): void } } })._nodes.nodeFrame;
+    if (nodeFrame.frameId === this.lastFrameId) {
+      nodeFrame.update();
+      (this.renderer.info as { frame: number }).frame = nodeFrame.frameId;
+    }
+    this.lastFrameId = nodeFrame.frameId;
     this.onFrame?.(dt);
     this.controls.update();
     const s = this.settings;

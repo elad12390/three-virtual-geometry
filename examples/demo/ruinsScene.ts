@@ -681,6 +681,22 @@ export async function createRuinsScene(app: DemoApp) {
     return dist;
   };
 
+  // Benchmark views: stops along the fly-through, from a 1 m close-up to the whole city.
+  const benchPosition = new THREE.Vector3();
+  app.benchPoses = (
+    [
+      ['bronze close-up', 0],
+      ['altar reliefs', 17],
+      ['sanctuary', 37],
+      ['whole city', 50],
+      ['avenue', 64],
+      ['colonnade', 74],
+    ] as const
+  ).map(([name, time]) => {
+    poseAt(time, camTarget, benchPosition);
+    return { name, position: benchPosition.toArray(), target: camTarget.toArray() };
+  });
+
   camera.far = 9000;
   poseAt(0, camTarget, camera.position);
   controls.target.copy(camTarget);

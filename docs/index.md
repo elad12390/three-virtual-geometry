@@ -49,21 +49,16 @@ mesh.
 <figure>
   <img src="/screenshots/ruins-wide.jpg" alt="An ancient city of 5.7 billion triangles: temples, streets, walls, hills and trees">
   <figcaption>The showcase scene: 5.7 billion full-detail triangles in 113,000 instances, where every paving stone,
-  column flute and carving is real geometry. About 5 million triangles are drawn per frame.
+  column flute and carving is real geometry. About 7 to 9 million triangles are drawn per frame, at 100 to 230 FPS.
   <a href="#live-demos">Run it below</a>.</figcaption>
 </figure>
 
 ## Results
 
-| Scene | Full-detail triangles | Instances | Drawn per frame |
-| --- | --- | --- | --- |
-| Ruins (showcase) | 5.7 billion | 113k | about 5M |
-| World (6 km landscape) | 37.5 billion | 3 million | about 5M |
-| Stress test | up to 158 billion | up to 4 million | 2 to 6M |
-| glTF import (Kenney cars) | 5.1 million | 12,366 meshes → 58 | about 0.7M |
+<BenchTable />
 
-All scenes run at the display refresh rate (60 to 120 FPS) on an Apple-silicon MacBook in Chrome. Drawn triangles
-stay roughly constant as scenes grow, because detail follows screen pixels.
+Drawn triangles stay roughly constant as scenes grow, because detail follows screen pixels. Every camera view, and
+how to run the benchmark on your machine: [Performance](/guide/performance#benchmarks).
 
 <div class="gallery">
   <figure><img src="/screenshots/world-meshlets.jpg" alt="Debug view: every cluster in its own color"><figcaption>Clusters (debug view). Near trees use small clusters of full detail, distant hills a few large ones.</figcaption></figure>

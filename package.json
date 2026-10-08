@@ -63,7 +63,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "bake": "node scripts/bake.mjs",
     "build:cli": "esbuild scripts/bake.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/bake.mjs --external:three --external:meshoptimizer \"--banner:js=#!/usr/bin/env node\"",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "bench": "node scripts/bench.mjs"
   },
   "peerDependencies": {
     "three": ">=0.180.0"
@@ -75,6 +76,7 @@
     "@types/three": "^0.186.0",
     "@webgpu/types": "^0.1.74",
     "esbuild": "^0.28.2",
+    "playwright": "^1.63.0",
     "three": "^0.186.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.3",

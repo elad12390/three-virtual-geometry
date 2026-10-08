@@ -22,14 +22,23 @@
 - **Shadows** already use a coarser selection (`shadowErrorScale`). Turn `castShadow` off for small clutter.
 - **On weak GPUs,** raise `errorThreshold` to 1.5 to 2, or set a `triangleBudget`.
 
-## Measured
+## Benchmarks
 
-On an Apple-silicon MacBook in Chrome, at the display refresh rate (60 to 120 FPS):
+Uncapped frame rates of the demo scenes: frames are submitted back to back with no vsync, and the GPU is waited on
+after every batch of 8, so these are the frame rates the hardware sustains, not the display's refresh rate. Each
+scene is measured from several fixed camera views at a 1 px error threshold with shadows on, at 1920×1080 and at
+3840×2160.
 
-| Scene | Full-detail triangles | Instances | Drawn |
-| --- | --- | --- | --- |
-| Ruins | 5.7 billion | 113k | about 5M |
-| World | 37.5 billion | 3 million | about 5M |
-| Stress, 1 million instances | 39 billion | 1 million | about 3M |
+<BenchTable detail />
 
-Run the stress test yourself with `?scene=stress&count=N` in the demo (up to 4 million).
+### Run them yourself
+
+```bash
+npm run bench                          # every scene, 1080p and 4K; writes docs/benchmarks.json (this table)
+npm run bench -- --scenes ruins,map    # some scenes
+npm run bench -- --url https://elad12390.github.io/three-virtual-geometry/demo/   # the deployed demo
+```
+
+It drives your installed Google Chrome with Playwright. In a browser you can also open any demo scene with
+`?bench` appended and read `window.__bench`, or tick **uncapped fps** in its settings panel to see the uncapped frame
+rate live.
