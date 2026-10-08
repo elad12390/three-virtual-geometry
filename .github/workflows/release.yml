@@ -1,0 +1,75 @@
+name: Release
+
+# Publishes to npm when a version tag is pushed:
+#
+#   npm version patch          # or minor / major: bumps package.json, commits, tags vX.Y.Z
+#   git push --follow-tags
+#
+# npm Trusted Publishing (OIDC): GitHub proves to npm that this workflow is running, so no npm token is stored
+# anywhere, and every release gets a provenance attestation linking it to this repository, commit and run.
+# Configured once with: npm trust github three-virtual-geometry --file release.yml --repo elad12390/three-virtual-geometry --env npm
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # OIDC token for npm Trusted Publishing and provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # Trusted Publishing needs npm 11.5.1 or newer; Node 22 ships with npm 10.
+      - run: npm install -g npm@^11.5.1
+
+      - name: Tag matches package.json version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      # prepublishOnly runs the same checks again inside npm publish; running them as steps shows which one failed.
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run check:types
+
+      - name: Publish to npm
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "three-virtual-geometry@$version" version >/dev/null 2>&1; then
+            echo "three-virtual-geometry@$version is already on npm, skipping publish"
+          else
+            npm publish --ignore-scripts
+          fi
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists"
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          fi

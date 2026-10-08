@@ -25,6 +25,20 @@ npm run bench        # uncapped FPS of every demo scene in Chrome (Playwright) -
 GPU code can only be checked in a WebGPU browser. After runtime changes, load the demo scenes and check the console
 for WebGPU validation errors and the HUD for `overflow`.
 
+## Releasing
+
+Releases are published by GitHub Actions (`.github/workflows/release.yml`) with npm Trusted Publishing: no npm
+token exists anywhere, and each version gets a provenance attestation on npm.
+
+```bash
+npm version patch            # or minor / major: bumps package.json, commits and tags vX.Y.Z
+git push --follow-tags       # the tag starts the Release workflow
+```
+
+The workflow checks that the tag matches `package.json`, runs typecheck, tests, build and `check:types`, publishes
+to npm, and creates the GitHub release with generated notes. jsDelivr and unpkg pick up the new version from npm.
+Don't publish from a laptop.
+
 ## Layout
 
 | Path | Role |
