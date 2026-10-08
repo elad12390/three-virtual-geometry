@@ -1,0 +1,88 @@
+/* Neutral ink palette with one muted bronze accent (taken from the demo's sculpture). Flat colors, no gradients. */
+:root {
+  --vp-c-brand-1: #8a5a24;
+  --vp-c-brand-2: #a06b2e;
+  --vp-c-brand-3: #1c1b19;
+  --vp-c-brand-soft: rgba(138, 90, 36, 0.12);
+  --vp-home-hero-name-color: #1c1b19;
+  --vp-button-brand-bg: #1c1b19;
+  --vp-button-brand-hover-bg: #34322e;
+  --vp-button-brand-active-bg: #000;
+  --vp-button-brand-text: #f4f1ea;
+  --vp-button-brand-hover-text: #f4f1ea;
+  --vp-button-brand-active-text: #f4f1ea;
+  --vp-c-bg-alt: #f6f4ef;
+  --vp-c-bg-soft: #f2efe8;
+}
+
+.dark {
+  --vp-c-bg: #121211;
+  --vp-c-bg-alt: #0c0c0b;
+  --vp-c-bg-soft: #1b1a18;
+  --vp-c-brand-1: #d7a868;
+  --vp-c-brand-2: #c4945a;
+  --vp-c-brand-3: #e8e4da;
+  --vp-c-brand-soft: rgba(215, 168, 104, 0.14);
+  --vp-home-hero-name-color: #f4f1ea;
+  --vp-button-brand-bg: #e8e4da;
+  --vp-button-brand-hover-bg: #fff;
+  --vp-button-brand-active-bg: #d6d1c4;
+  --vp-button-brand-text: #121211;
+  --vp-button-brand-hover-text: #121211;
+  --vp-button-brand-active-text: #121211;
+}
+
+/* Hero: a large screenshot instead of a logo. */
+.VPHero .image-container {
+  width: 100%;
+  height: auto;
+  transform: none;
+}
+.VPHero .image-bg {
+  display: none;
+}
+.VPHero .image-src {
+  position: static;
+  transform: none;
+  max-width: 100%;
+  max-height: none;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+@media (min-width: 960px) {
+  .VPHero .image {
+    flex-grow: 1.4;
+  }
+}
+
+/* Paper-style body of the home page. */
+.paper {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 24px 64px;
+}
+.paper img {
+  border-radius: 6px;
+}
+.paper figure {
+  margin: 24px 0;
+}
+.paper figcaption {
+  font-size: 14px;
+  color: var(--vp-c-text-2);
+  margin-top: 8px;
+}
+.paper .gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.paper .gallery figure {
+  margin: 0;
+}
+.dark {
+  --vp-button-alt-bg: #2a2926;
+  --vp-button-alt-hover-bg: #34322e;
+  --vp-button-alt-border: transparent;
+  --vp-c-default-soft: rgba(232, 228, 218, 0.08);
+}

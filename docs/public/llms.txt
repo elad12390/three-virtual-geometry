@@ -1,0 +1,73 @@
+# three-virtual-geometry
+
+> Virtual geometry for three.js WebGPU: a cluster level-of-detail hierarchy built per mesh, selected per frame on
+> the GPU, with frustum, size and occlusion culling. Lets a scene hold billions of source triangles while drawing a
+> few million. MIT license. Independent implementation, not affiliated with Epic Games.
+
+Docs: https://elad12390.github.io/three-virtual-geometry/
+Repository: https://github.com/elad12390/three-virtual-geometry
+Package: three-virtual-geometry (npm). Peer dependency: three >= 0.180. Requires WebGPU (WebGPURenderer).
+
+## Setup (the whole integration)
+
+```ts
+import * as THREE from 'three/webgpu';            // must be the WebGPU build of three.js
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VirtualGeometry } from 'three-virtual-geometry';
+
+const renderer = new THREE.WebGPURenderer({ antialias: true });
+await renderer.init();                            // required before rendering
+const vg = new VirtualGeometry();                 // one per app
+
+const gltf = await new GLTFLoader().loadAsync('model.glb');
+await vg.add(gltf.scene);                         // converts static meshes in place
+scene.add(gltf.scene);
+
+await vg.compileAsync(renderer, scene, camera);   // optional, during a loading screen
+renderer.setAnimationLoop(() => renderer.render(scene, camera)); // unchanged render loop
+```
+
+Rules:
+- Do not call vg.update() unless vg.autoUpdate was set to false; it runs automatically before each render.
+- vg.add() keeps materials (converted to node materials), textures, shadows flags, names and userData. Skinned and
+  morphing meshes, points, lines and sprites are left as normal three.js objects.
+- Repeated geometry becomes one instanced VirtualMesh automatically. Builds are cached in IndexedDB.
+- After moving an imported object, call result.syncTransforms() (result = return value of vg.add).
+- To undo: result.dispose().
+- In custom node materials use vgUv (not uv()) and vgWorldNormal.
+
+## Geometry made in code
+
+```ts
+import { buildVirtualMeshCached, fromBufferGeometry } from 'three-virtual-geometry';
+const data = await buildVirtualMeshCached(fromBufferGeometry(geometry));
+const matrices = new Float32Array(16 * count);    // column-major Matrix4 per instance
+for (let i = 0; i < count; i++) matrix.toArray(matrices, i * 16);
+const mesh = vg.createMesh(data, new THREE.MeshStandardNodeMaterial({ color: 0x888888 }), { matrices });
+scene.add(mesh);
+mesh.setMatrixAt(0, newMatrix); mesh.commitInstances();          // move instances later
+```
+
+## Levers (all optional)
+
+- new VirtualGeometry({ maxTriangles: 10_000_000, maxShadowTriangles: 4_000_000, maxMeshlets: 1 << 20 })
+- vg.errorThreshold.value = 1          // pixels of error; higher = faster, coarser
+- vg.triangleBudget = 0                // >0: adapt the threshold to this many triangles
+- vg.minPixelRadius.value = 0.7        // skip instances smaller than this (pixels)
+- vg.occlusion.enabled / vg.occlusion.auto
+- vg.shadowErrorScale.value = 3
+- mesh.maxDrawDistance = 400           // per mesh, e.g. grass; instances fade by shrinking
+- vg.add(obj, { build: { prune: true }, mesh: { maxDrawDistance: 400 }, filter: m => true, onProgress })
+- vg.debugMode.value = VG_DEBUG_MODES.meshlets
+
+## Checking it works
+
+const s = await vg.readStats(renderer);   // drawnTriangles << fullDetailTriangles, overflow === false
+
+## Offline baking
+
+npx vg-bake model.glb -o public/baked/model   -> *.vgeo + manifest.json; load with loadVirtualMesh(url).
+
+## Limitations
+
+Static meshes only (instances can move). One UV channel. Needs WebGPU (Chrome/Edge 113+, Safari 26+).

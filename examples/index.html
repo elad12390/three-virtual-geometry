@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>three-virtual-geometry · WebGPU virtual geometry</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        --panel: rgba(16, 16, 17, 0.78);
+        --panel-border: rgba(255, 255, 255, 0.09);
+        --text: #f4f4f5;
+        --muted: #9a9aa1;
+        --line: rgba(255, 255, 255, 0.08);
+        --sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', system-ui, sans-serif;
+        --mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+      }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0c0c0d; font-family: var(--sans); color: var(--text); }
+      canvas { display: block; }
+
+      /* ---------- loading screen ---------- */
+      #overlay {
+        position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+        background: #0c0c0d;
+      }
+      #overlay .title { font-size: clamp(22px, 5vw, 36px); font-weight: 700; letter-spacing: 0.32em; margin-right: -0.32em; }
+      #overlay .subtitle { margin-top: -12px; color: var(--muted); font-size: 14px; }
+      #overlay .bar { width: min(420px, 80vw); height: 2px; background: var(--line); overflow: hidden; }
+      #overlay .bar > div { height: 100%; width: 0; background: var(--text); transition: width 0.15s; }
+      #overlay-text { font-size: 15px; color: #cfe0f5; min-height: 20px; }
+
+      /* ---------- HUD ---------- */
+      #stats {
+        position: fixed; left: 16px; top: 16px; z-index: 5; width: 360px; padding: 18px 20px 16px; box-sizing: border-box;
+        background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px;
+        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); pointer-events: none; font-variant-numeric: tabular-nums;
+      }
+      #stats[hidden] { display: none; }
+      .hud-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+      .brand { font-weight: 700; font-size: 13px; letter-spacing: 0.22em; }
+      .tag { font-size: 12px; color: var(--muted); }
+      .scene { font-size: 13px; color: var(--muted); margin: -6px 0 14px; }
+      .scene b { color: var(--text); font-weight: 600; }
+
+      .fps-row { display: flex; align-items: flex-end; justify-content: space-between; }
+      .fps { display: flex; align-items: baseline; gap: 8px; }
+      #hud-fps { font-size: 60px; font-weight: 700; line-height: 0.9; letter-spacing: -0.02em; transition: color 0.3s; }
+      .fps small { font-size: 15px; font-weight: 700; color: var(--muted); letter-spacing: 0.1em; }
+      .fps-side { text-align: right; font-size: 13px; color: var(--muted); line-height: 1.6; }
+      .fps-side span { color: var(--text); font-weight: 600; font-family: var(--mono); }
+      #hud-graph { width: 100%; height: 46px; margin: 12px 0 16px; }
+
+      .hero { padding: 14px 0 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .label { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+      .hero-value { font-size: 38px; font-weight: 700; letter-spacing: -0.02em; margin: 2px 0 6px; }
+      .flow { display: flex; align-items: center; justify-content: space-between; font-size: 14px; color: var(--muted); }
+      .flow b { color: var(--text); font-size: 18px; font-weight: 700; }
+      .badge { font-size: 13px; font-weight: 600; color: var(--text); }
+      .meter { height: 3px; margin-top: 10px; background: var(--line); overflow: hidden; }
+      .meter > div { height: 100%; width: 0; background: rgba(255, 255, 255, 0.85); transition: width 0.3s; }
+      .meter-caption { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 5px; }
+
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+      .tile { padding: 8px 0 4px; }
+      .tile .value { font-size: 22px; font-weight: 700; margin-top: 3px; }
+      .tile .value small { font-size: 13px; color: var(--muted); font-weight: 600; margin-left: 3px; }
+      .tile .meter { margin-top: 7px; height: 2px; }
+
+      .warn { margin-top: 12px; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: #fde68a; background: rgba(251, 191, 36, 0.1); }
+      .warn[hidden] { display: none; }
+      .extra { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.6; color: var(--muted); white-space: pre-line; }
+
+      /* ---------- controls hint ---------- */
+      #hint {
+        position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 5; pointer-events: none;
+        padding: 9px 16px; border-radius: 8px; font-size: 14px; color: var(--muted); white-space: nowrap;
+        background: var(--panel); border: 1px solid var(--panel-border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        transition: opacity 1.2s;
+      }
+      #hint[hidden] { display: none; }
+      #hint kbd { font-family: var(--sans); font-weight: 600; color: var(--text); }
+
+      /* ---------- settings panel (lil-gui) ---------- */
+      /* lil-gui sets its variables on every .lil-gui element (nested folders too) from a stylesheet injected
+         after this one, so the overrides need a more specific selector */
+      body .lil-gui {
+        --width: 340px; --font-size: 13px; --input-font-size: 13px; --widget-height: 28px; --padding: 7px; --spacing: 7px;
+        --title-height: 40px; --name-width: 44%; --slider-input-width: 36%; --font-family: var(--sans);
+        --background-color: var(--panel); --widget-color: rgba(255, 255, 255, 0.07); --hover-color: rgba(255, 255, 255, 0.12);
+        --focus-color: rgba(255, 255, 255, 0.18); --number-color: var(--text); --string-color: var(--text); --text-color: var(--text);
+        --title-background-color: rgba(255, 255, 255, 0.03); --title-text-color: var(--text);
+      }
+      body .lil-gui .lil-gui { --background-color: transparent; }
+      .lil-gui.root {
+        top: 16px !important; right: 16px !important; border-radius: 10px; overflow: hidden;
+        border: 1px solid var(--panel-border); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      }
+      .lil-gui .title { font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
+
+      @media (max-width: 900px), (max-height: 700px) {
+        #stats { transform: scale(0.78); transform-origin: top left; }
+        body .lil-gui { --width: 270px; }
+        #hint { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="overlay">
+      <div class="title">VIRTUAL GEOMETRY</div>
+      <div class="subtitle">Virtual geometry for three.js · WebGPU</div>
+      <div class="bar"><div id="overlay-bar"></div></div>
+      <div id="overlay-text">Loading…</div>
+    </div>
+
+    <div id="stats" hidden>
+      <div class="hud-head">
+        <div class="brand">VIRTUAL GEOMETRY</div>
+        <div class="tag">three.js · WebGPU</div>
+      </div>
+      <div class="scene" id="hud-scene"></div>
+      <div class="fps-row">
+        <div class="fps"><span id="hud-fps">--</span><small>FPS</small></div>
+        <div class="fps-side">
+          <div><span id="hud-frame">--</span> ms / frame</div>
+          <div><span id="hud-cpu">--</span> ms CPU</div>
+        </div>
+      </div>
+      <canvas id="hud-graph"></canvas>
+      <div class="hero">
+        <div class="label">Triangles in the scene</div>
+        <div class="hero-value" id="hud-full">--</div>
+        <div class="flow"><span>drawn <b id="hud-drawn">--</b></span><span class="badge" id="hud-ratio">--</span></div>
+        <div class="meter"><div id="hud-budget-bar"></div></div>
+        <div class="meter-caption"><span id="hud-budget-label">triangle budget</span><span id="hud-budget">--</span></div>
+      </div>
+      <div class="grid">
+        <div class="tile"><div class="label">Instances</div><div class="value" id="hud-instances">--</div></div>
+        <div class="tile">
+          <div class="label">On screen</div><div class="value" id="hud-visible">--</div>
+          <div class="meter"><div id="hud-visible-bar"></div></div>
+        </div>
+        <div class="tile"><div class="label">Meshlets drawn</div><div class="value" id="hud-meshlets">--</div></div>
+        <div class="tile"><div class="label">LOD error</div><div class="value" id="hud-threshold">--</div></div>
+        <div class="tile"><div class="label">Hidden (occlusion)</div><div class="value" id="hud-occluded">--</div></div>
+        <div class="tile"><div class="label">Shadow tris</div><div class="value" id="hud-shadow">--</div></div>
+      </div>
+      <div class="warn" id="hud-warn" hidden>Draw capacity reached: raising the LOD threshold</div>
+      <div class="extra" id="hud-extra"></div>
+    </div>
+
+    <div id="hint" hidden><kbd>Drag</kbd> orbit · <kbd>Right-drag</kbd> pan · <kbd>Scroll</kbd> zoom</div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
