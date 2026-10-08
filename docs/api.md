@@ -101,6 +101,7 @@ usual.
 | `clearVirtualMeshCache()` | Empties the cache. |
 
 Build options: `prune` (`false`; remove small disconnected pieces, for grass and leaves), `voxelLods` (`true`),
+`voxelResolution` (`64`; finer voxel stand-ins, e.g. `128` for foliage made of many separate pieces),
 `groupSize` (`12`), `maxLodLevels` (`24`), `minRootTriangles` (`4`), `onProgress(fraction)`.
 
 ## Files

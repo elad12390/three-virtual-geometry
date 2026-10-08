@@ -56,6 +56,12 @@ export interface VirtualMeshBuildOptions {
    * (foliage and other aggregate geometry; solid meshes keep their triangles). Default true.
    */
   voxelLods?: boolean;
+  /**
+   * Finest voxel grid for those proxies, in cells along the longest side. Default 64. A finer grid (128) lowers the
+   * smallest error a voxel level can have, so foliage made of many separate pieces (palm fronds, leaves) switches to
+   * its cheap coarse levels closer to the camera. Builds take longer and use more memory.
+   */
+  voxelResolution?: number;
   onProgress?: (fraction: number) => void | Promise<void>;
 }
 
@@ -152,12 +158,17 @@ const DEFAULTS = {
   tailSimplify: true,
   minRootTriangles: 4,
   voxelLods: true,
+  voxelResolution: 64,
 };
 
 /** The tail (whole-object simplification, where voxel proxies can take over) starts at this many triangles. */
 const TAIL_START_TRIANGLES = 1024;
-/** Voxel proxy resolutions tried for each tail step (cells along the longest side). */
-const VOXEL_RESOLUTIONS = [64, 32, 16, 8, 4];
+/** Voxel proxy resolutions tried for each tail step (cells along the longest side), from `voxelResolution` down. */
+const voxelResolutions = (finest: number) => {
+  const list: number[] = [];
+  for (let r = Math.max(4, Math.round(finest)); r >= 4; r = Math.floor(r / 2)) list.push(r);
+  return list;
+};
 
 const yieldToBrowser = () => new Promise<void>((r) => setTimeout(r, 0));
 
@@ -311,7 +322,7 @@ export async function buildVirtualMesh(src: VirtualMeshSource, options: VirtualM
       // original directly, so it does not accumulate. It wins when triangles can only shrink the shape.
       let voxel: { proxy: VoxelProxy; indices: Uint32Array } | null = null;
       if (opts.voxelLods) {
-        for (const resolution of VOXEL_RESOLUTIONS) {
+        for (const resolution of voxelResolutions(opts.voxelResolution)) {
           const proxy = voxelProxy(resolution);
           if (!proxy) continue;
           const proxyTarget = Math.min(target, proxy.indices.length);

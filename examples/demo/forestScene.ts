@@ -4,7 +4,7 @@
  * all swaying in the wind.
  *
  * The models are not in the repository: `npm run demo:forest` downloads them (about 100 MB) and opens
- * `?scene=forest`. Options: `&trees=N` (canopy trees, default 1500), `&tour` (fly-through).
+ * `?scene=forest`. Options: `&trees=N` (canopy trees, default 500,000; the island grows with it), `&tour` (fly-through).
  */
 import * as THREE from 'three/webgpu';
 import { float, max, sin, time, vec3 } from 'three/tsl';
@@ -19,8 +19,8 @@ import { makeBroadleaf } from './assets';
 import { makeTour, type TourKey } from './tour';
 
 const BASE = 'scans/forest/';
-/** Half the side of the forested square, in metres. */
-const EXTENT = 330;
+/** Half the side of the area the jungle-floor plants cover (around the start of the tour), in metres. */
+const GROUND_EXTENT = 400;
 /** The clearing the tour flies down into, and the path leading to it. */
 const CLEARING = new THREE.Vector2(40, 90);
 const CLEARING_RADIUS = 38;
@@ -37,9 +37,17 @@ export async function createForestScene(app: DemoApp) {
   const params = new URLSearchParams(location.search);
   const random = mulberry32(5);
   const perlin = new Perlin(11);
+  // The island grows with the number of trees, packed tight: about one canopy tree every 4 m.
+  const canopyCount = Math.max(0, Number(params.get('trees') ?? 500000));
+  const EXTENT = Math.max(330, Math.sqrt(canopyCount) * 2.2);
 
-  // Keep detail: the engine may coarsen to at most 3 px to stay inside its draw buffers.
+  // Keep detail: the engine may coarsen to at most 3 px to stay inside its draw buffers. A packed jungle draws far
+  // more than the default 10M triangles per pool, so its pools (created below) get 40M, when the device allows it.
   vg.maxErrorThreshold = 3;
+  const device = (renderer.backend as unknown as { device?: GPUDevice }).device;
+  if (device && device.limits.maxStorageBufferBindingSize >= 40_000_000 * 12) {
+    Object.assign((vg as unknown as { capacity: object }).capacity, { triangles: 40_000_000, shadowTriangles: 8_000_000 });
+  }
   const response = await fetch(`${BASE}credits.json`).catch(() => null);
   if (!response?.ok || !response.headers.get('content-type')?.includes('json')) {
     throw new Error('The forest models are not downloaded yet. Run "npm run demo:forest" in the repository: it downloads them (about 100 MB) and opens this scene.');
@@ -55,16 +63,17 @@ export async function createForestScene(app: DemoApp) {
     const island = land(x, z);
     return (hills * (1 - 0.8 * clearingWeight(x, z)) + 2.5) * island - 6 * (1 - island);
   };
+  const terrainSize = EXTENT * 2.6;
   const textureLoader = new THREE.TextureLoader();
   const groundTexture = (name: string, srgb = false) => {
     const t = textureLoader.load(`${BASE}textures/forrest_ground_01/forrest_ground_01_${name}_2k.jpg`);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(1600 / 2.5, 1600 / 2.5); // the scan covers 2 x 2 m; a little larger hides the tiling
+    t.repeat.set(terrainSize / 2.5, terrainSize / 2.5); // the scan covers 2 x 2 m; a little larger hides the tiling
     t.anisotropy = 16;
     if (srgb) t.colorSpace = THREE.SRGBColorSpace;
     return t;
   };
-  const terrainGeometry = new THREE.PlaneGeometry(1600, 1600, 400, 400).rotateX(-Math.PI / 2);
+  const terrainGeometry = new THREE.PlaneGeometry(terrainSize, terrainSize, 512, 512).rotateX(-Math.PI / 2);
   const position = terrainGeometry.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < position.count; i++) position.setY(i, heightAt(position.getX(i), position.getZ(i)));
   terrainGeometry.computeVertexNormals();
@@ -98,7 +107,7 @@ export async function createForestScene(app: DemoApp) {
   envScene.add(envGround);
   scene.environment = new THREE.PMREMGenerator(renderer).fromScene(envScene, 0, 0.5, 1000).texture;
   scene.environmentIntensity = 0.35;
-  scene.fog = new THREE.FogExp2(0xc4d2d6, 0.0026); // tropical haze: each row of trees a little paler than the last
+  scene.fog = new THREE.FogExp2(0xc4d2d6, 0.0034); // tropical haze: each row of trees paler, gone by about 800 m
   scene.add(new THREE.HemisphereLight(0xb8c8d8, 0x4a3c28, 0.75));
   const sun = new THREE.DirectionalLight(0xffd7a8, 3.6);
   sun.castShadow = true;
@@ -146,7 +155,7 @@ export async function createForestScene(app: DemoApp) {
   };
   const pathWeight = (x: number, z: number) => smoothstep(9, 3, Math.abs(x - CLEARING.x * ((z + EXTENT) / (CLEARING.y + EXTENT))) ) * (z < CLEARING.y ? 1 : 0);
   /** 0 in the open (clearing, path), 1 in deep forest; patchy so the canopy has gaps and dense stands. */
-  const density = (x: number, z: number) => (1 - clearingWeight(x, z)) * (1 - pathWeight(x, z)) * smoothstep(-0.35, 0.25, perlin.fbm2(x / 90 + 7, z / 90, 3));
+  const density = (x: number, z: number) => (1 - clearingWeight(x, z)) * (1 - pathWeight(x, z)) * (0.65 + 0.35 * smoothstep(-0.35, 0.25, perlin.fbm2(x / 90 + 7, z / 90, 3)));
 
   /** Procedural plants (palms, bananas, ferns): instance matrices per variant, turned into virtual meshes below. */
   const procedural = { palm: [[], [], [], [], [], []], broadleaf: [[], [], [], []], banana: [[], [], [], [], []], fern: [[], [], [], []] } as Record<string, number[][]>;
@@ -159,7 +168,6 @@ export async function createForestScene(app: DemoApp) {
 
   // Canopy: leafy broadleaf trees (scaled up to 11 to 20 m) and coconut palms, by rejection sampling thinned by
   // density. Palms also line the coast.
-  const canopyCount = Math.max(0, Number(params.get('trees') ?? 2200));
   for (let i = 0, tries = 0; i < canopyCount && tries < canopyCount * 30; tries++) {
     const x = (random() * 2 - 1) * (EXTENT + 60);
     const z = (random() * 2 - 1) * (EXTENT + 60);
@@ -171,7 +179,7 @@ export async function createForestScene(app: DemoApp) {
     else plantProcedural('broadleaf', x, z, 0.9 + random() * 0.6, 0.2);
   }
   // Understory: banana clumps, jungle shrubs and young trees, thickest under and around the canopy.
-  for (let i = 0; i < canopyCount * 2.5; i++) {
+  for (let i = 0; i < canopyCount; i++) {
     const x = (random() * 2 - 1) * EXTENT;
     const z = (random() * 2 - 1) * EXTENT;
     if (!onLand(x, z)) continue;
@@ -184,10 +192,10 @@ export async function createForestScene(app: DemoApp) {
     else plant('shrub_01', x, z, 2 + random() * 2.5, undefined, 0.05);
   }
   // Jungle floor: ferns, calathea, low shrubs and nettles under the trees, grass in the open.
-  const groundCount = Number(params.get('ground') ?? 50000);
+  const groundCount = Number(params.get('ground') ?? 80000);
   for (let i = 0; i < groundCount; i++) {
-    const x = (random() * 2 - 1) * EXTENT;
-    const z = (random() * 2 - 1) * EXTENT;
+    const x = (random() * 2 - 1) * GROUND_EXTENT;
+    const z = (random() * 2 - 1) * GROUND_EXTENT;
     if (!onLand(x, z)) continue;
     const d = density(x, z);
     const r = random();
@@ -243,7 +251,7 @@ export async function createForestScene(app: DemoApp) {
       // Trees: every part bends from the base (bark included, so the whole tree moves together), and leaves and
       // twigs flutter on top. Grass and flowers only flutter.
       if (source.ground) return { maxDrawDistance: 90, deform: source.foliage ? wind(0, 0.05) : undefined };
-      return { deform: wind(1, source.foliage ? 0.09 : 0) };
+      return { maxDrawDistance: 250, deform: wind(1, source.foliage ? 0.09 : 0) };
     },
     onProgress: async (f) => {
       app.progress('Building the trees (first visit only, then cached)…', f);
@@ -262,8 +270,13 @@ export async function createForestScene(app: DemoApp) {
     for (const [v, matrices] of lists.entries()) {
       if (!matrices.length) continue;
       app.progress(`Building ${kind}s…`, v / lists.length);
-      const data: VirtualMeshData = await buildVirtualMeshCached(makers[kind](101 + v * 17), { cache: { maxBytes: 4 * 1024 ** 3 } });
-      const mesh = vg.createMesh(data, leafy, { matrices: new Float32Array(matrices) }, { deform: motion[kind], maxDrawDistance: kind === 'fern' ? 90 : undefined });
+      // Fronds and leaves are thousands of separate pieces that simplification cannot merge: a finer voxel grid gives
+      // their coarse levels a smaller error, so they switch to those levels closer to the camera.
+      const voxelResolution = kind === 'broadleaf' ? 64 : 128;
+      const data: VirtualMeshData = await buildVirtualMeshCached(makers[kind](101 + v * 17), { voxelResolution, cache: { maxBytes: 4 * 1024 ** 3 } });
+      // Beyond the haze nothing is visible: canopy trees stop at 900 m, understory plants sooner (they shrink away).
+      const maxDrawDistance = { palm: 900, broadleaf: 900, banana: 250, fern: 90 }[kind];
+      const mesh = vg.createMesh(data, leafy, { matrices: new Float32Array(matrices) }, { deform: motion[kind], maxDrawDistance });
       mesh.name = `${kind} ${v}`;
       mesh.castShadow = kind !== 'fern';
       mesh.receiveShadow = true;

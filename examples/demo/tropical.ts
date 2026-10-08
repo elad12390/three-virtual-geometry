@@ -91,7 +91,7 @@ function frond(b: Builder, o: FrondOptions, transform: THREE.Matrix4) {
   const up = new THREE.Vector3();
   const p = new THREE.Vector3();
   const color = new THREE.Color();
-  const segments = 7;
+  const segments = 4;
   for (let i = 0; i < o.leaflets; i++) {
     const t = 0.1 + (0.9 * (i + o.rand() * 0.4)) / o.leaflets;
     const origin = point(t);
