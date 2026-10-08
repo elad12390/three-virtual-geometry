@@ -3,8 +3,9 @@
  * with CC0 shrubs and ground cover from Poly Haven, scattered by the thousand over hills that fall away to the sea,
  * all swaying in the wind.
  *
- * The models are not in the repository: `npm run demo:forest` downloads them (about 100 MB) and opens
- * `?scene=forest`. Options: `&trees=N` (canopy trees, default 500,000; the island grows with it), `&tour` (fly-through).
+ * The Poly Haven models are not in the repository. `npm run demo:forest` downloads them into scans/forest/ and opens
+ * `?scene=forest`; without that download (e.g. on the website) they load straight from Poly Haven's CDN at 1k texture
+ * resolution. Options: `&trees=N` (canopy trees, default 500,000; the island grows with it), `&tour` (fly-through).
  */
 import * as THREE from 'three/webgpu';
 import { float, max, sin, time, vec3 } from 'three/tsl';
@@ -18,17 +19,58 @@ import { makeBanana, makeFern, makePalm } from './tropical';
 import { makeTour, type TourKey } from './tour';
 
 const BASE = 'scans/forest/';
+/** Poly Haven models (CC0) planted below: shrubs among the trees, the rest on the jungle floor near the camera. */
+const SHRUBS = ['shrub_01', 'shrub_02'];
+const GROUND = ['calathea_orbifolia_01', 'shrub_03', 'shrub_04', 'nettle_plant', 'grass_medium_01', 'root_cluster_02', 'rock_moss_set_01'];
+const GROUND_TEXTURE = 'forrest_ground_01';
 /** Half the side of the area the jungle-floor plants cover (around the start of the tour), in metres. */
 const GROUND_EXTENT = 400;
 /** The clearing the tour flies down into, and the path leading to it. */
 const CLEARING = new THREE.Vector2(40, 90);
 const CLEARING_RADIUS = 38;
 
-interface Credit {
-  id: string;
-  name: string;
-  role: 'tree' | 'ground' | 'terrain';
-  file: string;
+/** Where a model or texture comes from: the local download if there is one, else Poly Haven directly. */
+interface Sources {
+  /** URL of the glTF file of a model. */
+  model(id: string): Promise<string>;
+  /** URL of a terrain texture map ('diff', 'nor_gl' or 'arm'). */
+  texture(map: string): Promise<string>;
+}
+
+/** Files from `npm run demo:forest` (2k textures), when that has been run. Only looked for on a local server. */
+async function localSources(): Promise<Sources | null> {
+  if (!['localhost', '127.0.0.1'].includes(location.hostname)) return null;
+  const response = await fetch(`${BASE}credits.json`).catch(() => null);
+  if (!response?.ok || !response.headers.get('content-type')?.includes('json')) return null;
+  return {
+    model: async (id) => `${BASE}${id}/${id}.gltf`,
+    texture: async (map) => `${BASE}textures/${GROUND_TEXTURE}/${GROUND_TEXTURE}_${map}_2k.jpg`,
+  };
+}
+
+/**
+ * Files straight from Poly Haven's CDN (it allows cross-origin requests), 1k textures. A glTF's buffers and textures
+ * sit at other paths on the CDN than the glTF references, so `manager` maps each one to its real URL.
+ */
+function polyHavenSources(manager: THREE.LoadingManager): Sources {
+  type Files = Record<string, Record<string, Record<string, { url: string; include?: Record<string, { url: string }> }>>>;
+  const redirects = new Map<string, string>();
+  manager.setURLModifier((url) => redirects.get(url) ?? url);
+  const files = (id: string) => fetch(`https://api.polyhaven.com/files/${id}`).then((r) => {
+    if (!r.ok) throw new Error(`Could not load ${id} from Poly Haven (${r.status})`);
+    return r.json() as Promise<Files>;
+  });
+  return {
+    model: async (id) => {
+      const gltf = (await files(id)).gltf['1k'].gltf;
+      for (const [path, file] of Object.entries(gltf.include ?? {})) redirects.set(new URL(path, gltf.url).href, file.url);
+      return gltf.url;
+    },
+    texture: async (map) => {
+      const key = { diff: 'Diffuse', nor_gl: 'nor_gl', arm: 'arm' }[map]!;
+      return (await files(GROUND_TEXTURE))[key]['1k'].jpg.url;
+    },
+  };
 }
 
 export async function createForestScene(app: DemoApp) {
@@ -48,11 +90,8 @@ export async function createForestScene(app: DemoApp) {
   if (device && device.limits.maxStorageBufferBindingSize >= 40_000_000 * 12) {
     Object.assign((vg as unknown as { capacity: object }).capacity, { triangles: 40_000_000, shadowTriangles: 8_000_000 });
   }
-  const response = await fetch(`${BASE}credits.json`).catch(() => null);
-  if (!response?.ok || !response.headers.get('content-type')?.includes('json')) {
-    throw new Error('The forest models are not downloaded yet. Run "npm run demo:forest" in the repository: it downloads them (about 100 MB) and opens this scene.');
-  }
-  const credits = (await response.json()) as Credit[];
+  const manager = new THREE.LoadingManager();
+  const sources = (await localSources()) ?? polyHavenSources(manager);
 
   // ---------------------------------------------------------------- terrain
   /** An island: rolling jungle hills, flattened in the clearing, falling away to beaches and the sea (y = 0). */
@@ -64,9 +103,9 @@ export async function createForestScene(app: DemoApp) {
     return (hills * (1 - 0.8 * clearingWeight(x, z)) + 2.5) * island - 6 * (1 - island);
   };
   const terrainSize = EXTENT * 2.6;
-  const textureLoader = new THREE.TextureLoader();
-  const groundTexture = (name: string, srgb = false) => {
-    const t = textureLoader.load(`${BASE}textures/forrest_ground_01/forrest_ground_01_${name}_2k.jpg`);
+  const textureLoader = new THREE.TextureLoader(manager);
+  const groundTexture = async (name: string, srgb = false) => {
+    const t = textureLoader.load(await sources.texture(name));
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(terrainSize / 2.5, terrainSize / 2.5); // the scan covers 2 x 2 m; a little larger hides the tiling
     t.anisotropy = 16;
@@ -77,10 +116,10 @@ export async function createForestScene(app: DemoApp) {
   const position = terrainGeometry.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < position.count; i++) position.setY(i, heightAt(position.getX(i), position.getZ(i)));
   terrainGeometry.computeVertexNormals();
-  const arm = groundTexture('arm');
+  const [diff, normal, arm] = await Promise.all([groundTexture('diff', true), groundTexture('nor_gl'), groundTexture('arm')]);
   const terrain = new THREE.Mesh(
     terrainGeometry,
-    new THREE.MeshStandardNodeMaterial({ map: groundTexture('diff', true), normalMap: groundTexture('nor_gl'), roughnessMap: arm, aoMap: arm, color: 0xa9b48e })
+    new THREE.MeshStandardNodeMaterial({ map: diff, normalMap: normal, roughnessMap: arm, aoMap: arm, color: 0xa9b48e })
   );
   terrain.receiveShadow = true;
   scene.add(terrain);
@@ -119,27 +158,26 @@ export async function createForestScene(app: DemoApp) {
 
   // ---------------------------------------------------------------- models
   app.progress('Loading the tree and forest-floor models…', 0);
-  const loader = new GLTFLoader();
+  const loader = new GLTFLoader(manager);
   /** Each file holds several variants side by side (three firs, 17 grass clumps, ...): one model per variant. */
   const variants = new Map<string, string[]>();
   const models = new Map<string, THREE.Object3D>();
   let loaded = 0;
+  const ids = [...SHRUBS, ...GROUND];
   await Promise.all(
-    credits
-      .filter((c) => c.role !== 'terrain')
-      .map(async (credit) => {
-        const gltf = await loader.loadAsync(BASE + credit.file);
-        prepareModel(gltf.scene);
-        const keys: string[] = [];
-        for (const [i, node] of [...gltf.scene.children].entries()) {
-          node.position.set(0, node.position.y, 0); // variants are laid out along x: bring each to the origin
-          const key = `${credit.id}#${i}`;
-          models.set(key, node);
-          keys.push(key);
-        }
-        variants.set(credit.id, keys);
-        app.progress('Loading the tree and forest-floor models…', ++loaded / (credits.length - 1));
-      })
+    ids.map(async (id) => {
+      const gltf = await loader.loadAsync(await sources.model(id));
+      prepareModel(gltf.scene);
+      const keys: string[] = [];
+      for (const [i, node] of [...gltf.scene.children].entries()) {
+        node.position.set(0, node.position.y, 0); // variants are laid out along x: bring each to the origin
+        const key = `${id}#${i}`;
+        models.set(key, node);
+        keys.push(key);
+      }
+      variants.set(id, keys);
+      app.progress('Loading the tree and forest-floor models…', ++loaded / ids.length);
+    })
   );
 
   // ---------------------------------------------------------------- planting
@@ -214,7 +252,7 @@ export async function createForestScene(app: DemoApp) {
     }
   }
   // One InstancedMesh per part of each model: vg.add turns each into an instanced virtual mesh.
-  const GROUND_IDS = new Set([...credits.filter((c) => c.role === 'ground').map((c) => c.id), 'calathea_orbifolia_01', 'shrub_03', 'shrub_04', 'nettle_plant']);
+  const GROUND_IDS = new Set(GROUND);
   for (const [key, matrices] of placements) {
     const model = models.get(key)!;
     const id = key.split('#')[0];
@@ -228,7 +266,7 @@ export async function createForestScene(app: DemoApp) {
       instanced.name = `${id}/${mesh.name}`;
       instanced.userData.foliage =
         /twig|leaves|leaf|branch/i.test(mesh.name + (mesh.material as THREE.Material).name) ||
-        ['grass_medium_01', 'celandine_01', 'calathea_orbifolia_01', 'shrub_02', 'shrub_03', 'shrub_04', 'nettle_plant'].includes(id);
+        ['grass_medium_01', 'calathea_orbifolia_01', 'shrub_02', 'shrub_03', 'shrub_04', 'nettle_plant'].includes(id);
       instanced.castShadow = !GROUND_IDS.has(id) || id === 'rock_moss_set_01';
       instanced.receiveShadow = true;
       instanced.userData.ground = GROUND_IDS.has(id);

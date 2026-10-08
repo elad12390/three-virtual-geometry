@@ -136,8 +136,10 @@ the per-frame cost doesn't grow with the number of unique meshes.
 ```bash
 git clone https://github.com/elad12390/three-virtual-geometry && cd three-virtual-geometry
 npm install
-npm run dev     # http://localhost:8090/?scene=ruins (also map, world, import, stress, test)
+npm run dev     # http://localhost:8090/?scene=forest (also stress, world, map, ruins, import, test)
 npm test        # build invariants, partitioner, file format and import tests (Node)
+npm run demo:scans    # downloads about 2 GB of real scans once, then opens the museum of scans
+npm run demo:forest   # the jungle with its Poly Haven models downloaded at 2k (it also runs without)
 ```
 
 ## Limitations

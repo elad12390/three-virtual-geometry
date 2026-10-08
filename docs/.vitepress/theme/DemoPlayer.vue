@@ -6,7 +6,7 @@ import { withBase } from 'vitepress';
  * All demo scenes in one place. Only the selected scene runs: switching replaces the iframe, which frees the previous
  * scene's GPU device, and rendering pauses while the player is scrolled out of view.
  */
-const props = withDefaults(defineProps<{ autoplay?: boolean; initial?: string }>(), { autoplay: false, initial: 'ruins' });
+const props = withDefaults(defineProps<{ autoplay?: boolean; initial?: string }>(), { autoplay: false, initial: 'scans' });
 
 interface DemoScene {
   key: string;
@@ -24,13 +24,32 @@ interface DemoScene {
 
 const scenes: DemoScene[] = [
   {
-    key: 'ruins',
-    name: 'Ruins',
-    stat: '5.7B triangles',
-    query: 'scene=ruins&tour',
-    poster: '/screenshots/ruins-wide.jpg',
+    key: 'scans',
+    name: 'Real scans',
+    stat: 'video · 2 GB of scans',
+    video: '/videos/scans.mp4',
+    poster: '/screenshots/scans.jpg',
     description:
-      'An ancient city where every brick, paving stone, column flute and carving is geometry: 113k instances of 23 assets, drawn with 7 to 9M triangles a frame. The camera flies from a 2-million-triangle bronze out to the whole site; drag to take over.',
+      'Real 3D scans, the kind of data virtual geometry was made for, shown as a museum: 723 statues from 14 scans of classical sculpture, 1 to 4 million triangles each (SMK, National Gallery of Denmark, public domain), and 40 photoscanned rocks and cliffs (Poly Haven, CC0). 2.1 billion triangles, drawn with about a million per frame.',
+    note: 'Recorded, because the scans are about 2 GB: too much to download just by opening a page. To run it live, clone the repository and run npm run demo:scans. It downloads the scans once and opens the scene.',
+  },
+  {
+    key: 'forest',
+    name: 'Jungle',
+    stat: '500k palms · 1.3M plants',
+    query: 'scene=forest&tour',
+    poster: '/screenshots/forest.jpg',
+    description:
+      'A tropical island packed with 500,000 coconut palms, 600,000 banana plants, ferns and Poly Haven shrubs (CC0): 1.3 million plants and about 29 billion full-detail triangles, every leaflet real geometry and all of it swaying in the wind. The heaviest live scene: it needs a fast GPU.',
+    note: 'The palms, bananas and ferns are generated in the page; the shrubs and ground cover (about 36 MB) load from Poly Haven. The first visit builds the plants, which takes a little while; later visits load them from the cache.',
+  },
+  {
+    key: 'stress',
+    name: 'Stress test',
+    stat: '1M instances',
+    query: 'scene=stress&count=1000000',
+    poster: '/screenshots/stress.jpg',
+    description: 'A million instances on a flat field, 39 billion full-detail triangles, culled in cells of 128 on the GPU.',
   },
   {
     key: 'world',
@@ -50,6 +69,15 @@ const scenes: DemoScene[] = [
     description: 'A 2 km valley with conifers, a lake and mountains, generated at load time and lit with shadows.',
   },
   {
+    key: 'ruins',
+    name: 'Ruins',
+    stat: '5.7B triangles',
+    query: 'scene=ruins&tour',
+    poster: '/screenshots/ruins-wide.jpg',
+    description:
+      'An ancient city where every brick, paving stone, column flute and carving is geometry: 113k instances of 23 assets, drawn with 7 to 9M triangles a frame. The camera flies from a 2-million-triangle bronze out to the whole site; drag to take over.',
+  },
+  {
     key: 'import',
     name: 'glTF import',
     stat: '12k meshes → 58',
@@ -57,24 +85,6 @@ const scenes: DemoScene[] = [
     poster: '/screenshots/import.jpg',
     description:
       'A parking lot of textured glTF cars (Kenney Car Kit, CC0). 12,366 meshes become 58 instanced virtual meshes with one vg.add() call, textures included.',
-  },
-  {
-    key: 'stress',
-    name: 'Stress test',
-    stat: '1M instances',
-    query: 'scene=stress&count=1000000',
-    poster: '/screenshots/stress.jpg',
-    description: 'A million instances on a flat field, 39 billion full-detail triangles, culled in cells of 128 on the GPU.',
-  },
-  {
-    key: 'scans',
-    name: 'Real scans',
-    stat: 'video · 2 GB of scans',
-    video: '/videos/scans.mp4',
-    poster: '/screenshots/scans.jpg',
-    description:
-      'Real 3D scans, the kind of data virtual geometry was made for, shown as a museum: 723 statues from 14 scans of classical sculpture, 1 to 4 million triangles each (SMK, National Gallery of Denmark, public domain), and 40 photoscanned rocks and cliffs (Poly Haven, CC0). 2.1 billion triangles, drawn with about a million per frame.',
-    note: 'Recorded, because the scans are about 2 GB: too much to download just by opening a page. To run it live, clone the repository and run npm run demo:scans. It downloads the scans once and opens the scene.',
   },
 ];
 

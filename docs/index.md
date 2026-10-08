@@ -71,7 +71,8 @@ how to run the benchmark on your machine: [Performance](/guide/performance#bench
 
 ## Live demos
 
-Every scene runs right here, in your browser, with WebGPU (Chrome, Edge or Safari 26+). Pick one and press run. Only
+The scenes run right here, in your browser, with WebGPU (Chrome, Edge or Safari 26+), ordered from the heaviest to
+the lightest. Pick one and press run (the real scans are a recording: 2 GB is too much for a web page). Only
 the selected scene runs, and it pauses when you scroll away. The first load builds the scene's cluster hierarchies;
 later loads come from the browser cache. The left panel shows what the GPU is doing, and the settings panel on the
 right holds the levers.

@@ -1,7 +1,8 @@
-// The jungle demo: CC0 trees, shrubs and forest-floor models from Poly Haven (millions of triangles each), mixed
-// with procedural palms, banana plants and ferns generated at load time. Downloads them (once) and opens the scene:
+// The jungle demo: CC0 shrubs and forest-floor models from Poly Haven, mixed with procedural palms, banana plants and
+// ferns generated at load time. Downloads the models (once) and opens the scene. Without the download the scene loads
+// them from Poly Haven directly (as on the website), at lower texture resolution.
 //
-//   npm run demo:forest                 # trees and forest floor (about 100 MB of downloads)
+//   npm run demo:forest                 # about 75 MB of downloads
 //   npm run demo:forest -- --no-open    # prepare only, don't start a server
 //   npm run demo:forest -- --dev        # open it on the dev server (live reload) instead of the production build
 //
@@ -16,11 +17,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const out = join(root, 'examples', 'scans', 'forest');
 const args = process.argv.slice(2);
 
-// Poly Haven asset ids (all CC0), by role in the scene.
-// Broadleaf trees and shrubs with modelled leaves.
-// Shrubs and jungle-floor plants (the trees, palms and bananas are generated in code).
-const TREES = ['calathea_orbifolia_01', 'shrub_01', 'shrub_02', 'shrub_03', 'shrub_04', 'nettle_plant'];
-const GROUND = ['grass_medium_01', 'celandine_01', 'moss_01', 'bark_debris_01', 'root_cluster_02', 'rock_moss_set_01'];
+// Poly Haven asset ids (all CC0), as in examples/demo/forestScene.ts: shrubs among the trees, then the jungle floor.
+const TREES = ['shrub_01', 'shrub_02'];
+const GROUND = ['calathea_orbifolia_01', 'shrub_03', 'shrub_04', 'nettle_plant', 'grass_medium_01', 'root_cluster_02', 'rock_moss_set_01'];
 const assets = [...TREES, ...GROUND];
 /** Photoscanned forest-floor material for the terrain (2 x 2 m per tile). */
 const GROUND_TEXTURE = 'forrest_ground_01';

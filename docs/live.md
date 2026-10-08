@@ -8,8 +8,9 @@ title: Live demo
 
 # Live demo
 
-Every scene runs right here in the page, in your browser, with WebGPU (Chrome, Edge or Safari 26+). Pick a scene
-below. Only the selected one runs, and it pauses when you scroll away. Drag to orbit, right-drag to pan and scroll to
+The scenes run right here in the page, in your browser, with WebGPU (Chrome, Edge or Safari 26+). Pick a scene
+below; they are ordered from the heaviest to the lightest, and the real scans are a recording (2 GB is too much to
+download from a page). Only the selected one runs, and it pauses when you scroll away. Drag to orbit, right-drag to pan and scroll to
 zoom. The left panel shows what the GPU is doing; the settings panel on the right holds the levers: detail
 threshold, budget and debug views (try **view: meshlets**).
 

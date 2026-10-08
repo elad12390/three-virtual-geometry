@@ -13,7 +13,7 @@ Epic Games. Do not copy code from, or describe this as derived from, any proprie
 
 ```bash
 npm install
-npm run dev          # demo at http://localhost:8090 (?scene=ruins|map|world|import|stress|test)
+npm run dev          # demo at http://localhost:8090 (?scene=forest|stress|world|map|ruins|import|test; scans and forest: npm run demo:scans, demo:forest)
 npm test             # vitest: DAG invariants, partitioner, serialization, import grouping (Node, no GPU)
 npm run typecheck    # tsc --noEmit
 npm run build        # library (dist/index.js + .d.ts) and the vg-bake CLI (dist/bake.mjs)
