@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
-import { VirtualGeometry, VG_DEBUG_MODES, type VirtualGeometryStats } from '../../src/index';
+import { VirtualGeometry, VG_DEBUG_MODES, virtualGeometryLimits, type VirtualGeometryStats } from '../../src/index';
 import type { BenchPose } from './bench';
 
 const HUD_INTERVAL_MS = 250;
@@ -113,6 +113,9 @@ export class DemoApp {
   }
 
   async init() {
+    // Use the GPU's full buffer sizes, so single multi-million-triangle meshes (the forest's trees) fit.
+    const limits = await virtualGeometryLimits();
+    (this.renderer.backend as unknown as { parameters: { requiredLimits?: Record<string, number> } }).parameters.requiredLimits = limits;
     await this.renderer.init();
     if (!(this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend) {
       throw new Error('WebGPU is not available in this browser. This demo needs WebGPU (Chrome, Edge, Safari 26+).');

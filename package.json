@@ -67,7 +67,8 @@
     "bench": "node scripts/bench.mjs",
     "build:cdn": "node scripts/build-cdn.mjs",
     "check:types": "attw --pack . --profile esm-only",
-    "demo:scans": "node scripts/demos/scans.mjs"
+    "demo:scans": "node scripts/demos/scans.mjs",
+    "demo:forest": "node scripts/demos/forest.mjs"
   },
   "peerDependencies": {
     "three": ">=0.180.0"

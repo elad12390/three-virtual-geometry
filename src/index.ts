@@ -24,7 +24,7 @@ export type { VirtualMeshEncodeOptions } from './core/io/serialize.js';
 
 export { instanceGuaranteedRange, instanceMeshletRange, selectCut, verifyCutCoverage } from './core/runtime/cut.js';
 export type { CutView } from './core/runtime/cut.js';
-export { VirtualMesh, vgWorldNormal } from './core/runtime/VirtualMesh.js';
+export { VirtualMesh, vgWorldNormal, vgInstanceOrigin } from './core/runtime/VirtualMesh.js';
 export { vgUv, vgTexture, vgNormalMap, bindVirtualGeometryTextures } from './core/runtime/vgMaterial.js';
 export { toNodeMaterial, canConvertToNodeMaterial } from './core/import/toNodeMaterial.js';
 export { virtualMeshesFromObject3D, collectVirtualGeometryGroups, VirtualGeometryImport } from './core/import/fromObject3D.js';
@@ -32,6 +32,7 @@ export type { VirtualGeometryImportOptions, VirtualGeometryImportGroup, VirtualG
 export type { VirtualMeshInstances, VirtualMeshOptions } from './core/runtime/VirtualMesh.js';
 export { VirtualGeometry } from './core/runtime/VirtualGeometry.js';
 export type { VirtualGeometryStats, VirtualGeometryOptions } from './core/runtime/VirtualGeometry.js';
+export { virtualGeometryLimits } from './core/runtime/limits.js';
 export { VG_DEBUG_MODES, MAX_MESHLET_TRIANGLES, MAX_MESHLET_VERTICES } from './core/constants.js';
 
 export { fromBufferGeometry, mergeSources } from './source.js';

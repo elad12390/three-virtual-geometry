@@ -20,6 +20,12 @@ export interface VirtualGeometryCacheOptions {
   key?: string;
   /** 'indexeddb' (default) or false to always build. */
   store?: 'indexeddb' | false;
+  /**
+   * Least recently used entries are evicted when the cache grows above this many bytes. Default 512 MB. Raise it for
+   * scenes with many multi-million-triangle meshes, so every build stays cached; the browser's own storage quota
+   * still applies (a write that exceeds it is skipped, never an error).
+   */
+  maxBytes?: number;
 }
 
 export interface VirtualGeometryCachedBuildOptions extends VirtualMeshBuildOptions {
@@ -29,7 +35,7 @@ export interface VirtualGeometryCachedBuildOptions extends VirtualMeshBuildOptio
 const DB_NAME = 'three-virtual-geometry-cache';
 const DATA_STORE = 'meshes';
 const META_STORE = 'meta';
-/** Least recently used entries are evicted above this total size. */
+/** Least recently used entries are evicted above this total size (unless `cache.maxBytes` says otherwise). */
 const MAX_CACHE_BYTES = 512 * 1024 * 1024;
 const OPEN_TIMEOUT_MS = 3000;
 
@@ -68,7 +74,7 @@ export async function buildVirtualMeshCached(source: VirtualMeshSource, options:
   try {
     // No deflate: the cache optimizes for decode speed (deflate saves ~30% space but doubles decode time).
     const encoded = await encodeVirtualMesh(data, { deflate: false });
-    void writeEntry(db, key, encoded); // not awaited: the build result is ready, storing happens in the background
+    void writeEntry(db, key, encoded, cache?.maxBytes); // not awaited: the build result is ready, storing happens in the background
   } catch {
     // never fail a build because of the cache
   }
@@ -188,7 +194,7 @@ function readEntry(db: IDBDatabase, key: string): Promise<Uint8Array | null> {
   });
 }
 
-function writeEntry(db: IDBDatabase, key: string, bytes: Uint8Array): Promise<void> {
+function writeEntry(db: IDBDatabase, key: string, bytes: Uint8Array, maxBytes = MAX_CACHE_BYTES): Promise<void> {
   return new Promise<void>((resolve) => {
     try {
       const tx = db.transaction([DATA_STORE, META_STORE], 'readwrite');
@@ -199,7 +205,7 @@ function writeEntry(db: IDBDatabase, key: string, bytes: Uint8Array): Promise<vo
     } catch {
       resolve();
     }
-  }).then(() => evict(db, key));
+  }).then(() => evict(db, key, maxBytes));
 }
 
 function touchEntry(db: IDBDatabase, key: string) {
@@ -226,8 +232,8 @@ function deleteEntry(db: IDBDatabase, key: string) {
   }
 }
 
-/** Drops least recently used entries (never `keep`) while the cache is over MAX_CACHE_BYTES. */
-function evict(db: IDBDatabase, keep: string): Promise<void> {
+/** Drops least recently used entries (never `keep`) while the cache is over `maxBytes`. */
+function evict(db: IDBDatabase, keep: string, maxBytes: number): Promise<void> {
   return new Promise<void>((resolve) => {
     try {
       const tx = db.transaction([DATA_STORE, META_STORE], 'readwrite');
@@ -240,7 +246,7 @@ function evict(db: IDBDatabase, keep: string): Promise<void> {
         let total = entries.reduce((acc, e) => acc + e.size, 0);
         entries.sort((a, b) => a.lastUsed - b.lastUsed);
         for (const e of entries) {
-          if (total <= MAX_CACHE_BYTES) break;
+          if (total <= maxBytes) break;
           if (e.key === keep) continue;
           tx.objectStore(DATA_STORE).delete(e.key);
           meta.delete(e.key);

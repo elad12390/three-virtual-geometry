@@ -6,7 +6,7 @@
  * is built once. Skinned and morphing meshes, points, lines and sprites are left alone and keep rendering.
  */
 import * as THREE from 'three/webgpu';
-import { buildVirtualMeshCached } from '../io/cache.js';
+import { buildVirtualMeshCached, type VirtualGeometryCachedBuildOptions } from '../io/cache.js';
 import { buildVirtualMesh, type VirtualMeshBuildOptions, type VirtualMeshData, type VirtualMeshSource } from '../preprocess/buildVirtualMesh.js';
 import { fromBufferGeometry } from '../../source.js';
 import type { VirtualGeometry } from '../runtime/VirtualGeometry.js';
@@ -19,8 +19,11 @@ export type VirtualGeometryBuilder = (source: VirtualMeshSource, options?: Virtu
 const defaultBuilder: VirtualGeometryBuilder = buildVirtualMeshCached;
 
 export interface VirtualGeometryImportOptions {
-  /** DAG build options for every geometry (`onProgress` is driven by the import; use `onProgress` below). */
-  build?: Omit<VirtualMeshBuildOptions, 'onProgress'>;
+  /**
+   * DAG build options for every geometry (`onProgress` is driven by the import; use `onProgress` below), including
+   * `cache` options for the default cached builder, e.g. `{ cache: { maxBytes: 2 * 1024 ** 3 } }`.
+   */
+  build?: Omit<VirtualGeometryCachedBuildOptions, 'onProgress'>;
   /** Options for each created VirtualMesh (e.g. `maxDrawDistance`), or a function returning them per group. */
   mesh?: VirtualMeshOptions | ((group: VirtualGeometryImportGroup) => VirtualMeshOptions | undefined);
   /** Return false to leave a mesh as it is (it keeps rendering normally). Called for every compatible mesh. */

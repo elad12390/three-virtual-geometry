@@ -31,6 +31,7 @@ const vg = new VirtualGeometry(options?: VirtualGeometryOptions);
 | `errorInCssPixels` | `true` | Measure the threshold in CSS pixels rather than device pixels. |
 | `triangleBudget` | `0` (off) | Target drawn triangles; the threshold adapts slowly to hold it. |
 | `thresholdRange` | `[0.5, 3]` | Bounds for the adapted threshold. |
+| `maxErrorThreshold` | `64` | Highest threshold the engine may switch to on its own to keep draw buffers from overflowing. |
 | `minPixelRadius.value` | `0.7` | Skip instances smaller than this on screen (radius, pixels). |
 | `frustumCulling.value` | `1` | `0` disables frustum culling. |
 | `occlusion.enabled` | `true` | Occlusion culling. |
@@ -83,6 +84,7 @@ usual.
 | `setMatrixAt(i, matrix)` then `commitInstances()` | Move instances. |
 | `maxDrawDistance` | Cull distance in world units (default `Infinity`). Instances shrink away over the last 15%. |
 | `minPixelRadius` | Per-mesh screen-size cull; the larger of this and the context's value applies. |
+| `deform` (option) | `(worldPosition, { instanceOrigin }) => node`: moves vertices in the vertex shader (TSL), e.g. foliage swaying in the wind. |
 | `occluder` | Draw into the occlusion depth pass (default: opaque, single-sided, no alpha test). |
 | `occlusionCulling` | Let occlusion hide this mesh's instances (default `true`). |
 | `instanceCount`, `fullDetailTriangles` | Read-only counts. |
@@ -119,6 +121,8 @@ CLI: `npx vg-bake model.glb -o out/` (see [Baking and caching](/guide/caching)).
 | `toNodeMaterial(material)` | Node-material equivalent of a classic material, or `null`. |
 | `vgUv` | Texture coordinates of a virtual mesh, for custom nodes (instead of `uv()`). |
 | `vgWorldNormal` | World-space normal, for custom nodes. |
+| `vgInstanceOrigin` | World position of the current instance (vertex stage). |
+| `virtualGeometryLimits()` | Limits to pass as `requiredLimits` to `WebGPURenderer`, so single meshes above 128 MB (several million triangles) fit. |
 | `vgTexture(texture)` | `texture(t, vgUv)`. |
 
 ## Debugging

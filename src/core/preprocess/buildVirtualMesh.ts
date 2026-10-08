@@ -100,9 +100,12 @@ export interface VirtualMeshData {
   /** Sphere enclosing every meshlet's culling sphere (all LODs): if an instance sphere is inside the frustum, so are they. */
   cullBoundsSphere: [number, number, number, number];
   /**
-   * DAG links, CSR form: meshlet i is replaced by coarser meshlets
-   * `replacementIndices[replacementStart[i] .. replacementStart[i + 1]]`. Empty for coarsest meshlets.
+   * DAG links (CPU only, for `verifyCutCoverage`; not stored in .vgeo files). Meshlet i belongs to the group that
+   * `replacementGroup[i]` names (-1 for the coarsest meshlets), and that group is replaced by the coarser meshlets
+   * `replacementIndices[replacementStart[g] .. replacementStart[g + 1]]`. Every meshlet of a group shares one list, so
+   * the size stays linear even when a simplification step merges thousands of meshlets at once.
    */
+  replacementGroup: Int32Array;
   replacementStart: Uint32Array;
   replacementIndices: Uint32Array;
   /** Whole-object bounding sphere (center xyz, radius). */
@@ -399,13 +402,25 @@ function pack(src: VirtualMeshSource, unsorted: WipMeshlet[], lodLevels: number,
   const meshletInfo = new Uint32Array(meshletCount * MESHLET_INFO_STRIDE);
   const indexOf = new Map<WipMeshlet, number>();
   all.forEach((m, i) => indexOf.set(m, i));
-  const replacementStart = new Uint32Array(meshletCount + 1);
-  const replacementIndices: number[] = [];
+  // Every meshlet of a group points at the same `replacements` array: store each group's list once.
+  const replacementGroup = new Int32Array(meshletCount).fill(-1);
+  const groupOf = new Map<WipMeshlet[], number>();
+  const groupStarts: number[] = [0];
+  let replacementTotal = 0;
   all.forEach((m, i) => {
-    replacementStart[i] = replacementIndices.length;
-    for (const r of m.replacements) replacementIndices.push(indexOf.get(r)!);
+    if (m.replacements.length === 0) return;
+    let g = groupOf.get(m.replacements);
+    if (g === undefined) {
+      g = groupOf.size;
+      groupOf.set(m.replacements, g);
+      replacementTotal += m.replacements.length;
+      groupStarts.push(replacementTotal);
+    }
+    replacementGroup[i] = g;
   });
-  replacementStart[meshletCount] = replacementIndices.length;
+  const replacementStart = Uint32Array.from(groupStarts);
+  const replacementIndices = new Uint32Array(replacementTotal);
+  for (const [list, g] of groupOf) list.forEach((r, k) => (replacementIndices[replacementStart[g] + k] = indexOf.get(r)!));
 
   const meshletVertices = new Uint32Array(all.reduce((acc, m) => acc + m.vertices.length, 0));
   const meshletTriangles = new Uint32Array(indices.length / 3);
@@ -482,8 +497,9 @@ function pack(src: VirtualMeshSource, unsorted: WipMeshlet[], lodLevels: number,
     meshletCount,
     meshletBounds,
     meshletInfo,
+    replacementGroup,
     replacementStart,
-    replacementIndices: Uint32Array.from(replacementIndices),
+    replacementIndices,
     meshletVertices,
     meshletTriangles,
     levelRanges,

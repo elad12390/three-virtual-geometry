@@ -19,7 +19,7 @@ test('LOD cut covers every leaf exactly once (no holes, no overlaps)', async () 
   }
 
   const data = await buildVirtualMesh(fromBufferGeometry(terrain()));
-  assert(data.replacementStart.length === data.meshletCount + 1, 'DAG links: one CSR row per meshlet');
+  assert(data.replacementGroup.length === data.meshletCount, 'DAG links: one replacement group per meshlet');
 
   // Views: aerial and low, several positions, thresholds in pixels.
   const views = [];

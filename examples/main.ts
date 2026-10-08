@@ -7,6 +7,7 @@ import { createWorldScene } from './demo/worldScene';
 import { createRuinsScene } from './demo/ruinsScene';
 import { createImportScene } from './demo/importScene';
 import { createScansScene } from './demo/scansScene';
+import { createForestScene } from './demo/forestScene';
 import { createMuseumScene } from './demo/museumScene';
 import { runBenchmark } from './demo/bench';
 
@@ -23,6 +24,7 @@ async function main() {
       test: '<b>Test scene</b>',
       import: '<b>glTF import</b> · one call',
       scans: '<b>Scans</b> · real photogrammetry',
+      forest: '<b>Jungle</b> · dense island forest',
       museum: '<b>Museum</b> · architecture',
     };
     app.sceneLabel = labels[sceneName] ?? labels.map;
@@ -32,6 +34,7 @@ async function main() {
     else if (sceneName === 'ruins') await createRuinsScene(app);
     else if (sceneName === 'import') await createImportScene(app);
     else if (sceneName === 'scans') await createScansScene(app);
+    else if (sceneName === 'forest') await createForestScene(app);
     else if (sceneName === 'museum') await createMuseumScene(app);
     else await createMapScene(app);
     // Compile every pipeline behind the loading screen: no first-frame freeze, no pop-in.

@@ -78,6 +78,8 @@ export const vgMeshletVarying = varyingProperty('float', 'vVgMeshlet');
 export const vgLodVarying = varyingProperty('float', 'vVgLod');
 export const vgInstanceVarying = varyingProperty('float', 'vVgInstance');
 export const vgTintVarying = varyingProperty('vec3', 'vVgTint');
+/** World position of the current vertex's instance origin (vertex stage): e.g. to make whole trees sway from their base. */
+export const vgInstanceOrigin = varyingProperty('vec3', 'vVgInstanceOrigin');
 
 /** Bits of an index used for the meshlet-local vertex; the rest is the draw slot. */
 export const LOCAL_VERTEX_BITS = Math.ceil(Math.log2(MAX_MESHLET_VERTICES));
@@ -218,6 +220,10 @@ export class GeometryPool {
   dirty = true;
   /** True once a cut was computed (its camera index buffer can then serve as occluders). */
   hasCut = false;
+  /** Holds one mesh too large for a shared pool, sized for it (no other mesh joins). */
+  dedicated = false;
+  /** Set when the device cannot bind this pool's buffers: it is skipped entirely and its meshes are hidden. */
+  disabled = false;
 
   constructor(
     private readonly context: VirtualGeometry,
@@ -954,6 +960,7 @@ export class GeometryPool {
       // Distance from the main camera (context.viewMatrix), also in the shadow pass, so shadows fade with it.
       const maxDrawDistance = levers.x;
       const origin = columns[3].xyz;
+      vgInstanceOrigin.assign(origin);
       const originDistance = length((ctx.viewMatrix as Node).mul(vec4(origin, 1)).xyz);
       const fade = maxDrawDistance.sub(originDistance).div(maxDrawDistance.mul(DRAW_DISTANCE_FADE)).clamp(0, 1);
       const worldPosition = origin.add(model.mul(vec4(localPosition, 0)).xyz.mul(fade));

@@ -42,8 +42,8 @@ const ZERO = new THREE.Vector3();
  * Threshold that brings a too-full draw buffer back to ~85%: triangles scale with about 1/threshold^2, so
  * one step lands near the target even from a large overflow (at most 2x per step, at least 4%).
  */
-function capacityStep(threshold: number, use: number) {
-  return Math.min(64, threshold * Math.min(2, Math.max(1.04, Math.sqrt(use / 0.85))));
+function capacityStep(threshold: number, use: number, max: number) {
+  return Math.max(threshold, Math.min(max, threshold * Math.min(2, Math.max(1.04, Math.sqrt(use / 0.85)))));
 }
 
 export interface VirtualGeometryOptions {
@@ -54,8 +54,9 @@ export interface VirtualGeometryOptions {
   /** Max meshlets drawn per frame per pool. Default 1M. */
   maxMeshlets?: number;
   /**
-   * Largest storage-buffer binding a pool may use, in bytes. A pool that would exceed it is closed and a new one
-   * opened. Default 120 MB (WebGPU guarantees 128 MB; raise it if you request a higher device limit).
+   * Largest storage-buffer binding a shared pool may use, in bytes. A pool that would exceed it is closed and a new
+   * one opened. Default 120 MB (WebGPU guarantees 128 MB). A single mesh larger than this gets a pool of its own,
+   * which needs a device created with higher limits: see `virtualGeometryLimits()`.
    */
   maxPoolBytes?: number;
 }
@@ -77,6 +78,12 @@ export class VirtualGeometry {
   triangleBudget = 0;
   /** Bounds for the automatically adjusted error threshold, in pixels. */
   thresholdRange: [number, number] = [0.5, 3];
+  /**
+   * The highest error threshold, in pixels, that the engine may switch to on its own to keep draw buffers from
+   * overflowing. Default 64. Lower it to keep detail no matter what: if the scene still asks for more triangles than
+   * the buffers hold, some clusters are then dropped (raise `maxTriangles` instead if that happens).
+   */
+  maxErrorThreshold = 64;
   /** Latest GPU readback, updated every `statsInterval` frames while a budget or HUD is active. */
   lastStats: VirtualGeometryStats | null = null;
   statsInterval = 10;
@@ -204,9 +211,37 @@ export class VirtualGeometry {
 
   /** Builds pools whose buffers grew and points their meshes at the new buffers. */
   private preparePools(renderer: THREE.WebGPURenderer) {
-    for (const pool of this.pools) pool.prepare(renderer);
+    this.checkDeviceLimits(renderer);
+    for (const pool of this.pools) if (!pool.disabled) pool.prepare(renderer);
     // A pool may also have been rebuilt while meshes were being added: syncPool is a version check.
     for (const mesh of this.meshes) mesh.syncPool();
+  }
+
+  private readonly checkedPools = new WeakSet<GeometryPool>();
+
+  /**
+   * Disables pools whose buffers the device cannot bind (a mesh with a pool of its own, on a device created with
+   * default limits): their compute passes are skipped and their meshes hidden, with one message saying how to fix it.
+   */
+  private checkDeviceLimits(renderer: THREE.WebGPURenderer) {
+    const device = (renderer.backend as unknown as { device?: GPUDevice }).device;
+    if (!device) return;
+    const limit = Math.min(device.limits.maxStorageBufferBindingSize, device.limits.maxBufferSize);
+    for (const pool of this.pools) {
+      if (this.checkedPools.has(pool)) continue;
+      this.checkedPools.add(pool);
+      if (pool.maxBytes <= limit) continue;
+      pool.disabled = true;
+      const meshes = this.meshes.filter((m) => m.pool === pool);
+      for (const mesh of meshes) mesh.visible = false;
+      const mb = (n: number) => `${Math.round(n / 2 ** 20)} MB`;
+      console.error(
+        `three-virtual-geometry: ${meshes.map((m) => `"${m.name || 'mesh'}"`).join(', ')} needs ${mb(pool.maxBytes)} in a ` +
+          `single GPU buffer, but this device allows ${mb(limit)}, so it is not drawn. Create the renderer with ` +
+          `new WebGPURenderer({ requiredLimits: await virtualGeometryLimits() }) to use the GPU's full limits, or ` +
+          `use a lighter version of the mesh.`
+      );
+    }
   }
 
   /**
@@ -215,7 +250,7 @@ export class VirtualGeometry {
    */
   async compileAsync(renderer: THREE.WebGPURenderer, scene: THREE.Object3D, camera: THREE.Camera) {
     this.preparePools(renderer);
-    const pending = this.pools.filter((p) => p.pipelineState !== 'ready');
+    const pending = this.pools.filter((p) => !p.disabled && p.pipelineState !== 'ready');
     for (const pool of pending) pool.pipelineState = 'compiling';
     await Promise.all(pending.map((p) => renderer.compileComputeAsync(p.computeNodes).catch(() => undefined)));
     for (const pool of pending) {
@@ -238,12 +273,14 @@ export class VirtualGeometry {
   /** Puts the mesh's geometry and instances into the first pool with room (a new pool when none has). */
   register(mesh: VirtualMesh, instances: VirtualMeshInstances) {
     const instanceCount = instances.matrices.length / 16;
-    if (GeometryPool.bytesOf(mesh.data) > this.maxPoolBytes) {
-      throw new Error(`VirtualGeometry: a single mesh needs more than maxPoolBytes (${this.maxPoolBytes} bytes) of GPU buffer`);
-    }
-    let pool = this.pools.find((p) => p.fits(mesh.data, instanceCount));
+    // A mesh too large for a shared pool gets one of its own, sized for it. Whether the device can bind buffers
+    // that large is only known once there is a renderer: preparePools checks it.
+    const bytes = GeometryPool.bytesOf(mesh.data);
+    const dedicated = bytes > this.maxPoolBytes;
+    let pool = dedicated ? undefined : this.pools.find((p) => !p.dedicated && p.fits(mesh.data, instanceCount));
     if (!pool) {
-      pool = new GeometryPool(this, this.capacity, this.maxPoolBytes);
+      pool = new GeometryPool(this, this.capacity, dedicated ? Math.ceil(bytes * 1.01) : this.maxPoolBytes);
+      pool.dedicated = dedicated;
       this.pools.push(pool);
     }
     mesh.pool = pool;
@@ -368,7 +405,7 @@ export class VirtualGeometry {
     const dispatched = this.dispatchedPools;
     dispatched.length = 0;
     for (const pool of this.pools) {
-      if (!pool.dirty || pool.entries.length === 0) continue;
+      if (pool.disabled || !pool.dirty || pool.entries.length === 0) continue;
       if (pool.pipelineState !== 'ready') {
         if (this.asyncCompile) {
           // Compile in the background: the pool's meshes show up a few frames later instead of a freeze.
@@ -459,7 +496,7 @@ export class VirtualGeometry {
     this.guardBase = null;
     const [lo, hi] = this.thresholdRange;
     if (stats.overflow || use > 0.9) {
-      this.errorThreshold.value = capacityStep(t, use);
+      this.errorThreshold.value = capacityStep(t, use, this.maxErrorThreshold);
       return;
     }
     if (stats.drawnTriangles <= 0) return;
@@ -490,7 +527,7 @@ export class VirtualGeometry {
     let next = t;
     if (stats.overflow || stats.capacityUse > 0.9) {
       this.guardBase ??= t;
-      next = capacityStep(t, stats.capacityUse);
+      next = capacityStep(t, stats.capacityUse, this.maxErrorThreshold);
     } else if (this.guardBase !== null && t > this.guardBase) {
       const back = Math.max(this.guardBase, t * 0.97);
       if (stats.capacityUse * (t / back) ** 2 <= 0.85) next = back;

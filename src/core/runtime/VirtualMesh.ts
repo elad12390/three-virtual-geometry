@@ -14,6 +14,7 @@ import {
   CELL_SIZE,
   NO_DRAW_DISTANCE,
   mortonOrder,
+  vgInstanceOrigin,
   vgInstanceVarying,
   vgLodVarying,
   vgMeshletVarying,
@@ -24,7 +25,7 @@ import {
 } from './GeometryPool.js';
 import { bindVirtualGeometryTextures } from './vgMaterial.js';
 
-export { vgWorldNormal, encodeOctNormal, packVertices, packUvs } from './GeometryPool.js';
+export { vgWorldNormal, vgInstanceOrigin, encodeOctNormal, packVertices, packUvs } from './GeometryPool.js';
 
 export interface VirtualMeshInstances {
   /** 16 floats (column-major Matrix4) per instance. */
@@ -45,6 +46,13 @@ export interface VirtualMeshOptions {
    * `VirtualGeometry.minPixelRadius` (the larger one wins). Default: 0. Also settable via `mesh.minPixelRadius`.
    */
   minPixelRadius?: number;
+  /**
+   * Moves vertices in the vertex shader, e.g. foliage swaying in the wind: gets the world-space position node and
+   * returns a displaced one (three.js TSL). `instanceOrigin` is the instance's world position, so a tree can bend
+   * from its base. Culling and level of detail use the undisplaced geometry, so keep the displacement small (well
+   * under a metre).
+   */
+  deform?: (worldPosition: any, context: { instanceOrigin: any }) => any; // eslint-disable-line @typescript-eslint/no-explicit-any -- TSL nodes
   /** @deprecated Draw capacity is shared per pool now: see `VirtualGeometryOptions`. Ignored. */
   maxDrawnMeshlets?: number;
   /** @deprecated Draw capacity is shared per pool now: see `VirtualGeometryOptions`. Ignored. */
@@ -102,6 +110,8 @@ export class VirtualMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.NodeMate
   private readonly dirtyCells = new Set<number>();
   private drawingShadow = false;
   private poolVersion = -1;
+  /** `options.deform`, applied to the pool's position node. */
+  private readonly deform: ((worldPosition: Node, context: { instanceOrigin: Node }) => Node) | undefined;
   private readonly context: VirtualGeometry;
 
   /** Cull distance in world units (Infinity: never). See `VirtualMeshOptions.maxDrawDistance`. */
@@ -130,6 +140,7 @@ export class VirtualMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.NodeMate
     material = claimMaterial(material);
     const geometry = placeholderGeometry();
     super(geometry, material);
+    this.deform = options.deform;
     this.context = context;
     this.data = data;
     this.frustumCulled = false; // culling happens on the GPU
@@ -192,7 +203,7 @@ export class VirtualMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.NodeMate
     this.cameraGeometry.setIndirect(pool.drawArgsAttribute, pool.drawArgsOffset(0, this.entry.slot));
     this.shadowGeometry.setIndex(pool.shadowIndex as unknown as THREE.BufferAttribute);
     this.shadowGeometry.setIndirect(pool.drawArgsAttribute, pool.drawArgsOffset(1, this.entry.slot));
-    this.material.positionNode = pool.positionNode;
+    this.material.positionNode = this.deform ? this.deform(pool.positionNode, { instanceOrigin: vgInstanceOrigin }) : pool.positionNode;
     this.material.needsUpdate = true;
   }
 

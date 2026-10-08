@@ -53,12 +53,13 @@ export function selectCut(data: VirtualMeshData, view: CutView, threshold: numbe
  */
 export function verifyCutCoverage(data: VirtualMeshData, selected: Uint8Array): number[] {
   const covered = new Int8Array(data.meshletCount).fill(-1); // -1 unknown, 0 no, 1 yes
-  const { replacementStart: start, replacementIndices: list } = data;
+  const { replacementGroup: groupOf, replacementStart: start, replacementIndices: list } = data;
 
   const isCovered = (i: number): boolean => {
     if (covered[i] !== -1) return covered[i] === 1;
     let result = selected[i] === 1;
-    for (let k = start[i]; !result && k < start[i + 1]; k++) result = isCovered(list[k]);
+    const g = groupOf[i];
+    if (g >= 0) for (let k = start[g]; !result && k < start[g + 1]; k++) result = isCovered(list[k]);
     covered[i] = result ? 1 : 0;
     return result;
   };
