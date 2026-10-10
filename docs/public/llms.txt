@@ -80,6 +80,8 @@ mesh.setMatrixAt(0, newMatrix); mesh.commitInstances();          // move instanc
 
 - new VirtualGeometry({ maxTriangles: 10_000_000, maxShadowTriangles: 4_000_000, maxMeshlets: 1 << 20 })
 - vg.errorThreshold.value = 1          // pixels of error; higher = faster, coarser
+- vg.lodBlend = 2                      // widest blend band between LOD levels, used automatically above ~1.25 px of error (1 = never)
+- vg.lodBlendTemporal = true           // only with TAA (three's TRAA): virtual meshes output velocity automatically
 - vg.triangleBudget = 0                // >0: adapt the threshold to this many triangles
 - vg.minPixelRadius.value = 0.7        // skip instances smaller than this (pixels)
 - vg.occlusion.enabled / vg.occlusion.auto

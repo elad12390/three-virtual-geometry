@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import * as THREE from 'three';
-import { buildVirtualMesh, fromBufferGeometry, instanceMeshletRange, selectCut, verifyCutCoverage } from '../src/index';
+import { buildVirtualMesh, fromBufferGeometry, instanceMeshletRange, LOD_FADE_STEPS, selectBlendCut, selectCut, verifyCutCoverage, verifyCutOverlap } from '../src/index';
 
 test('LOD cut covers every leaf exactly once (no holes, no overlaps)', async () => {
   const assert = (cond: unknown, msg: string) => {
@@ -62,4 +62,56 @@ test('LOD cut covers every leaf exactly once (no holes, no overlaps)', async () 
     const [start, end] = instanceMeshletRange(data, view, 1);
     assert(end - start < data.meshletCount / 4, `far instance tests only ${end - start} of ${data.meshletCount} meshlets`);
   }
+}, 300_000);
+
+test('LOD blend: every pixel step of the band shows a complete cut, without overlaps', async () => {
+  const assert = (cond: unknown, msg: string) => {
+    expect(cond, msg).toBeTruthy();
+  };
+  const g = new THREE.PlaneGeometry(400, 400, 96, 96).rotateX(-Math.PI / 2);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) p.setY(i, 30 * Math.sin(p.getX(i) * 0.05) * Math.cos(p.getZ(i) * 0.04));
+  const data = await buildVirtualMesh(fromBufferGeometry(g));
+
+  let blended = 0;
+  for (const [x, y, z] of [
+    [0, 40, 260],
+    [150, 6, -40],
+    [-300, 200, 300],
+  ]) {
+    const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 5000);
+    camera.position.set(x, y, z);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const view = { viewMatrix: camera.matrixWorldInverse.elements, projScale: camera.projectionMatrix.elements[5] * 540, near: 0.1 };
+    for (const [threshold, blend] of [
+      [1, 2],
+      [0.7, 1.5],
+      [2, 3],
+    ]) {
+      const { lo, hi } = selectBlendCut(data, view, threshold, blend);
+      // The band contains the plain cuts at both of its ends.
+      for (const t of [threshold, threshold * blend * 0.999]) {
+        const plain = selectCut(data, view, t);
+        for (let i = 0; i < data.meshletCount; i++) assert(!plain[i] || hi[i] > 0, `plain cut at ${t}px is inside the blend selection`);
+      }
+      for (let step = 0; step < LOD_FADE_STEPS; step++) {
+        const selected = new Uint8Array(data.meshletCount);
+        for (let i = 0; i < data.meshletCount; i++) selected[i] = lo[i] <= step && step < hi[i] ? 1 : 0;
+        assert(verifyCutCoverage(data, selected).length === 0, `no holes at step ${step} (${threshold}px x${blend})`);
+        assert(verifyCutOverlap(data, selected).length === 0, `no overlaps at step ${step} (${threshold}px x${blend})`);
+      }
+      for (let i = 0; i < data.meshletCount; i++) if (hi[i] > 0 && (lo[i] > 0 || hi[i] < LOD_FADE_STEPS)) blended++;
+    }
+  }
+  assert(blended > 0, 'some meshlets are partly blended');
+  // Blend 1 is the plain cut.
+  const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 5000);
+  camera.position.set(0, 40, 260);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld();
+  const view = { viewMatrix: camera.matrixWorldInverse.elements, projScale: camera.projectionMatrix.elements[5] * 540, near: 0.1 };
+  const plain = selectCut(data, view, 1);
+  const { lo, hi } = selectBlendCut(data, view, 1, 1);
+  for (let i = 0; i < data.meshletCount; i++) assert((plain[i] === 1) === (hi[i] > 0) && (hi[i] === 0 || (lo[i] === 0 && hi[i] === LOD_FADE_STEPS)), 'blend 1 = plain cut');
 }, 300_000);

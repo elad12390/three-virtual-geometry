@@ -20,6 +20,12 @@ without deleting clumps, so its error jumps. For coarse levels the builder also 
 closes gaps between parts, extracts a smooth surface and simplifies that, then keeps whichever candidate has the
 smaller measured error. Solid meshes keep their triangles; foliage switches automatically.
 
+**Leaf cards.** A group made of separate cards (palm leaflets, grass blades) shares no vertices between its pieces,
+so edge collapses stall on it. Such a group is reduced piece by piece instead: each card is simplified with its open
+edges free, then neighbouring cards are thinned in pairs, the kept card widened to cover both, so the foliage keeps
+its density (stochastic simplification of aggregate detail). The error is how far the coverage moved. The builder
+uses this only where it is more accurate than a voxel stand-in with as few triangles.
+
 ## 2. Selecting the cut, every frame
 
 A meshlet is drawn when, seen from the camera, its own error is at most the threshold (about one pixel) and its
@@ -31,6 +37,15 @@ draw(meshlet) = projectedError(meshlet) <= threshold < projectedError(parent)
 
 Because errors grow monotonically up the hierarchy, exactly one version of every part of the surface passes, so
 the selected set never has holes or overlaps.
+
+**Blending levels.** With that test alone, a meshlet switches to its parent at one exact distance, all of its
+pixels at once. At about a pixel of error that is invisible, and levels switch directly. Above that (the effective
+threshold rises to 2.5 px), every pixel gets its own threshold inside a band `[t, t * lodBlend]`, from a per-pixel
+pattern, and shows the cut for that threshold. The selection keeps every meshlet that is in the cut for some
+threshold of the band and passes the fragment shader the range of the pattern it owns, from its own error to its
+parent's on a log scale. Each pixel therefore sees one complete cut, and as the camera moves detail passes from one
+level to the next a few pixels at a time. With temporal anti-aliasing the pattern changes every frame and averages
+into a crossfade.
 
 The selection runs in compute shaders (three.js TSL), in a fixed set of passes per **pool** of meshes:
 
@@ -70,8 +85,12 @@ grown by the error threshold, because occluders are simplified too. Since the ex
 
 ## Keeping the image steady
 
-- With a fixed threshold, detail changes only when an object's distance changes, a few meshlets at a time.
-- The optional triangle budget changes the threshold rarely and in small steps, because every change re-selects
-  detail across the whole screen at once.
-- Draw buffers have fixed sizes. An overflow would drop meshlets in a different order every frame, so the threshold
-  is raised before any buffer fills up, and given back afterwards.
+- With a fixed threshold, detail changes only when an object's distance changes, and LOD blending spreads each
+  change over a band of distances.
+- Draw buffers have fixed sizes. An overflow would drop meshlets in a different order every frame (holes). A
+  capacity controller on the GPU checks each cut after selection: if it does not fit, it is selected again at a
+  coarser threshold in the same frame (up to two retries), so no frame ever draws a partial cut. Between frames the
+  factor glides by a few percent, without any CPU readback in the loop.
+- The optional triangle budget moves the threshold by a few percent per frame at most.
+- Meshlets inside a blend band are drawn by a separate draw with the blend mask; the rest keep a shader without
+  discard, so early depth testing is not lost.

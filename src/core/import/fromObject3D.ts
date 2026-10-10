@@ -71,9 +71,9 @@ const converted = new WeakSet<THREE.Object3D>();
 
 /** Why a mesh is left alone, or null when it can be converted. */
 export function incompatibility(mesh: THREE.Object3D): string | null {
-  const m = mesh as THREE.Mesh & { isSkinnedMesh?: boolean; isBatchedMesh?: boolean; isVirtualMesh?: boolean };
+  const m = mesh as THREE.Mesh & { isSkinnedMesh?: boolean; isBatchedMesh?: boolean; isVirtualMesh?: boolean; isVirtualMeshPart?: boolean };
   if (!m.isMesh) return 'not a mesh';
-  if (m.isVirtualMesh) return 'already a VirtualMesh';
+  if (m.isVirtualMesh || m.isVirtualMeshPart) return 'already a VirtualMesh';
   if (m.isSkinnedMesh) return 'skinned';
   if (m.isBatchedMesh) return 'batched';
   const geometry = m.geometry;

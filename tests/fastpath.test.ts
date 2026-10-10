@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import * as THREE from 'three';
-import { buildVirtualMesh, fromBufferGeometry, instanceGuaranteedRange, selectCut } from '../src/index';
+import { buildVirtualMesh, fromBufferGeometry, instanceGuaranteedRange, LOD_FADE_STEPS, selectBlendCut, selectCut } from '../src/index';
 import { FAST_PATH_MAX_MESHLETS, MESHLET_BOUNDS_STRIDE } from '../src/core/constants';
 
 test('fast path only emits meshlets the full test would select', async () => {
@@ -60,6 +60,7 @@ test('fast path only emits meshlets the full test would select', async () => {
   // ignoring frustum culling) selects exactly the meshlets of the fast range, and nothing else.
   let fast = 0;
   let fastSingle = 0;
+  let fastBlend = 0;
   let instancesChecked = 0;
   let violations = 0;
   for (let k = 0; k < 40; k++) {
@@ -94,6 +95,16 @@ test('fast path only emits meshlets the full test would select', async () => {
           if (i >= start && i < end) inRange++;
         }
         if (inRange !== end - start || total !== inRange) violations++;
+
+        // With LOD blending, the fast range must be exactly the drawn meshlets, each over every pixel.
+        const blendRange = instanceGuaranteedRange(data, view, threshold, 2);
+        if (!blendRange) continue;
+        fastBlend++;
+        const { lo, hi } = selectBlendCut(data, view, threshold, 2);
+        for (let i = 0; i < data.meshletCount; i++) {
+          const inFast = i >= blendRange[0] && i < blendRange[1];
+          if (inFast !== hi[i] > 0 || (inFast && (lo[i] !== 0 || hi[i] !== LOD_FADE_STEPS))) violations++;
+        }
       }
     }
   }
@@ -160,5 +171,6 @@ test('fast path only emits meshlets the full test would select', async () => {
   }
   console.log(`fast path fired for ${fast} of ${instancesChecked} instance/threshold cases (${fastSingle} single-meshlet)`);
   assert(fast > 0 && fastSingle > 0, 'the fast path fires for far instances (test is not vacuous)');
+  assert(fastBlend > 0, 'the fast path also fires with LOD blending');
   assert(violations === 0, 'every fast-path range equals the per-meshlet LOD cut for that instance');
 }, 300_000);

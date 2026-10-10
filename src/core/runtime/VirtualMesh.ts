@@ -6,7 +6,7 @@
  * the camera cut and the shadow cut, which draw this mesh's region of the pool's index buffers.
  */
 import * as THREE from 'three/webgpu';
-import { cameraViewMatrix, faceDirection, hash, materialColor, normalize, select, vec3, vec4 } from 'three/tsl';
+import { bool, cameraViewMatrix, faceDirection, hash, materialColor, normalize, select, vec3, vec4 } from 'three/tsl';
 import { VG_DEBUG_MODES } from '../constants.js';
 import type { VirtualMeshData } from '../preprocess/buildVirtualMesh.js';
 import type { VirtualGeometry } from './VirtualGeometry.js';
@@ -24,6 +24,8 @@ import {
   type PoolEntry,
 } from './GeometryPool.js';
 import { bindVirtualGeometryTextures } from './vgMaterial.js';
+import { lodBlendMask } from './lodBlend.js';
+import { vgVelocityOutput } from './velocity.js';
 
 export { vgWorldNormal, vgInstanceOrigin, encodeOctNormal, packVertices, packUvs } from './GeometryPool.js';
 
@@ -75,6 +77,9 @@ function claimMaterial(material: THREE.NodeMaterial): THREE.NodeMaterial {
   return material;
 }
 
+/** Material keys the blend part keeps as its own (identity, bookkeeping, and the mask it adds). */
+const MATERIAL_SYNC_SKIP = new Set(['uuid', 'id', 'name', 'version', 'userData', 'maskNode', '_listeners', '_cacheKey', '_needsUpdate', 'isMaterial']);
+
 function placeholderGeometry() {
   const geometry = new THREE.BufferGeometry();
   // Placeholder attributes; real vertex data is pulled from storage buffers in the vertex shader.
@@ -91,9 +96,21 @@ export class VirtualMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.NodeMate
   /** The pool holding this mesh's geometry and instances, and its record there. Set by `VirtualGeometry`. */
   pool!: GeometryPool;
   entry!: PoolEntry;
-  /** Geometries drawing this mesh's region of the pool's camera and shadow index buffers. */
+  /**
+   * Geometries drawing this mesh's region of the pool's camera and shadow index buffers: the meshlets drawn over
+   * every pixel. Those inside an LOD blend band are drawn by `blendPart`.
+   */
   readonly cameraGeometry = placeholderGeometry();
   readonly shadowGeometry = placeholderGeometry();
+  /**
+   * Child mesh drawing the meshlets inside an LOD blend band (see lodBlend.ts), with a copy of the material that
+   * keeps only the fragments of each pixel's own level. Kept apart because a shader that may discard fragments
+   * loses early depth testing, which would slow down every other meshlet.
+   */
+  readonly blendPart: THREE.Mesh<THREE.BufferGeometry, THREE.NodeMaterial>;
+  private readonly cameraBlendGeometry = placeholderGeometry();
+  private readonly shadowBlendGeometry = placeholderGeometry();
+  private blendSourceVersion = -1;
   /** `context.frameCount` of the last shadow-map render of this mesh. */
   lastShadowFrame = 0;
   /**
@@ -110,6 +127,9 @@ export class VirtualMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.NodeMate
   private readonly dirtyCells = new Set<number>();
   private drawingShadow = false;
   private poolVersion = -1;
+  /** The material's own MRT output, and whether the velocity output is merged into it (see setVelocityOutput). */
+  private readonly ownMrt: Node;
+  private velocityOutput = false;
   /** `options.deform`, applied to the pool's position node. */
   private readonly deform: ((worldPosition: Node, context: { instanceOrigin: Node }) => Node) | undefined;
   private readonly context: VirtualGeometry;
@@ -159,6 +179,8 @@ export class VirtualMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.NodeMate
     // Material: textures sample the pulled UVs, per-instance tint, debug views. The position node comes from
     // the pool (set in syncPool, again whenever the pool rebuilds its buffers).
     bindVirtualGeometryTextures(material);
+    const m = material as Node;
+    this.ownMrt = m.mrtNode ?? null;
     const base = vec4(material.colorNode ?? (materialColor as Node)).toVar() as Node;
     const randomColor = (seed: Node) => vec3(hash(seed), hash(seed.add(17.17)), hash(seed.add(43.43)));
     const debugColor = select(
@@ -172,6 +194,13 @@ export class VirtualMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.NodeMate
     if (material.side === THREE.DoubleSide && !material.normalNode) {
       material.normalNode = normalize((cameraViewMatrix as Node).mul(vec4(vgWorldNormal, 0)).xyz.mul(faceDirection as Node));
     }
+    // The blend part: the same material, plus the per-pixel level mask.
+    this.blendPart = new THREE.Mesh(this.cameraBlendGeometry, material.clone());
+    this.blendPart.name = 'lod blend';
+    Object.assign(this.blendPart, { isVirtualMeshPart: true }); // vg.add() leaves it alone
+    this.blendPart.frustumCulled = false;
+    this.add(this.blendPart);
+    this.syncBlendPart();
     this.syncPool();
     this.geometry = this.cameraGeometry;
     geometry.dispose();
@@ -192,6 +221,45 @@ export class VirtualMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.NodeMate
       else this.geometry = this.cameraGeometry;
       autoUpdateHook.apply(this, args);
     };
+    let blendInShadow = false;
+    this.blendPart.onBeforeShadow = () => {
+      blendInShadow = true;
+      this.blendPart.geometry = this.shadowBlendGeometry;
+    };
+    this.blendPart.onBeforeRender = () => {
+      if (blendInShadow) blendInShadow = false;
+      else this.blendPart.geometry = this.cameraBlendGeometry;
+    };
+  }
+
+  /**
+   * Keeps the blend part's material and flags in step with this mesh (called by VirtualGeometry every frame): values
+   * such as colours, maps and uniforms are copied each frame; a material change that needs a recompile (its version
+   * changed, or a different material) is copied as a whole.
+   */
+  syncBlendPart() {
+    const part = this.blendPart;
+    part.castShadow = this.castShadow;
+    part.receiveShadow = this.receiveShadow;
+    part.renderOrder = this.renderOrder;
+    part.layers.mask = this.layers.mask;
+    const source = this.material as Node;
+    const target = part.material as Node;
+    const rebuild = source.version !== this.blendSourceVersion;
+    for (const key of Object.keys(source)) {
+      if (MATERIAL_SYNC_SKIP.has(key)) continue;
+      const value = source[key];
+      const current = target[key];
+      if (value && typeof value === 'object' && typeof value.copy === 'function' && typeof value.equals === 'function' && current && current !== value && typeof current.copy === 'function') {
+        if (!current.equals(value)) current.copy(value);
+      } else if (current !== value) target[key] = value;
+    }
+    // Each pixel keeps only the fragments of its own level (see lodBlend.ts), on top of the material's own mask.
+    if (rebuild || !target.maskNode) target.maskNode = source.maskNode ? bool(source.maskNode).and(lodBlendMask()) : lodBlendMask();
+    if (rebuild) {
+      this.blendSourceVersion = source.version;
+      target.needsUpdate = true;
+    }
   }
 
   /** Points the geometries and the material at the pool's current buffers and nodes (after a pool rebuild). */
@@ -199,12 +267,33 @@ export class VirtualMesh extends THREE.Mesh<THREE.BufferGeometry, THREE.NodeMate
     const pool = this.pool;
     if (this.poolVersion === pool.version || !pool.positionNode) return;
     this.poolVersion = pool.version;
-    this.cameraGeometry.setIndex(pool.cameraIndex as unknown as THREE.BufferAttribute);
-    this.cameraGeometry.setIndirect(pool.drawArgsAttribute, pool.drawArgsOffset(0, this.entry.slot));
-    this.shadowGeometry.setIndex(pool.shadowIndex as unknown as THREE.BufferAttribute);
-    this.shadowGeometry.setIndirect(pool.drawArgsAttribute, pool.drawArgsOffset(1, this.entry.slot));
+    const slot = this.entry.slot;
+    const parts: [THREE.BufferGeometry, THREE.BufferAttribute, number, number][] = [
+      [this.cameraGeometry, pool.cameraIndex, 0, 0],
+      [this.shadowGeometry, pool.shadowIndex, 1, 0],
+      [this.cameraBlendGeometry, pool.cameraIndex, 0, 1],
+      [this.shadowBlendGeometry, pool.shadowIndex, 1, 1],
+    ] as unknown as [THREE.BufferGeometry, THREE.BufferAttribute, number, number][];
+    for (const [geometry, index, cut, part] of parts) {
+      geometry.setIndex(index);
+      geometry.setIndirect(pool.drawArgsAttribute, pool.drawArgsOffset(cut, slot, part));
+    }
     this.material.positionNode = this.deform ? this.deform(pool.positionNode, { instanceOrigin: vgInstanceOrigin }) : pool.positionNode;
     this.material.needsUpdate = true;
+    this.syncBlendPart();
+  }
+
+  /**
+   * Outputs the motion of the pulled vertices as `velocity` (for TAA), merged into the material's own MRT. Only
+   * while a pass asks for it: a material MRT in a render target without MRT would replace the color output.
+   */
+  setVelocityOutput(on: boolean) {
+    if (on === this.velocityOutput) return;
+    this.velocityOutput = on;
+    const m = this.material as Node;
+    m.mrtNode = on ? (this.ownMrt ? this.ownMrt.merge(vgVelocityOutput) : vgVelocityOutput) : this.ownMrt;
+    this.material.needsUpdate = true;
+    this.syncBlendPart();
   }
 
   /** Force the next `VirtualGeometry.update` to recompute the cut. */

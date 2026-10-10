@@ -28,10 +28,12 @@ const vg = new VirtualGeometry(options?: VirtualGeometryOptions);
 | Property | Default | |
 | --- | --- | --- |
 | `errorThreshold.value` | `1` | Allowed error in pixels. Higher is coarser and faster. |
+| `lodBlend` | `2` | Widest LOD blend band: when the effective threshold is above about 1.25 px, pixels show detail for thresholds from t to t * `lodBlend` (full width from 2.5 px), so levels change gradually. `1`: never blend. |
+| `lodBlendTemporal` | `false` | Change the blend pattern every frame. Use with temporal anti-aliasing. |
 | `errorInCssPixels` | `true` | Measure the threshold in CSS pixels rather than device pixels. |
 | `triangleBudget` | `0` (off) | Target drawn triangles; the threshold adapts slowly to hold it. |
 | `thresholdRange` | `[0.5, 3]` | Bounds for the adapted threshold. |
-| `maxErrorThreshold` | `64` | Highest threshold the engine may switch to on its own to keep draw buffers from overflowing. |
+| `maxErrorThreshold` | `64` | Highest effective threshold the GPU capacity controller may use to keep a cut inside its draw buffers (it redoes an overflowing cut in the same frame). |
 | `minPixelRadius.value` | `0.7` | Skip instances smaller than this on screen (radius, pixels). |
 | `frustumCulling.value` | `1` | `0` disables frustum culling. |
 | `occlusion.enabled` | `true` | Occlusion culling. |
@@ -43,7 +45,7 @@ const vg = new VirtualGeometry(options?: VirtualGeometryOptions);
 | `asyncCompile` | `true` | Compile pipelines in the background. |
 | `freeze` | `false` | Keep the current selection. |
 | `debugMode.value` | `0` | One of `VG_DEBUG_MODES`. |
-| `lastStats` | `null` | Latest stats, refreshed every `statsInterval` (10) frames. |
+| `lastStats` | `null` | Latest stats, refreshed every `statsInterval` (10) frames, every other frame while a draw buffer is nearly full. |
 
 ### VirtualGeometryStats
 
@@ -102,6 +104,9 @@ usual.
 
 Build options: `prune` (`false`; remove small disconnected pieces, for grass and leaves), `voxelLods` (`true`),
 `voxelResolution` (`64`; finer voxel stand-ins, e.g. `128` for foliage made of many separate pieces),
+`aggregateLods` (`true`; groups of separate pieces such as leaf cards that edge collapses cannot reduce are simplified
+piece by piece and thinned, the kept pieces widened to keep the foliage's coverage, wherever that is more accurate
+than a voxel stand-in),
 `groupSize` (`12`), `maxLodLevels` (`24`), `minRootTriangles` (`4`), `onProgress(fraction)`.
 
 ## Files

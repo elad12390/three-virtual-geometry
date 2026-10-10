@@ -18,6 +18,44 @@ be drawn. Lower is sharper and costs more triangles; higher is faster.
 It is measured in CSS pixels (`vg.errorInCssPixels = true`), so it means the same on a Retina screen and on a 1x
 screen.
 
+## Smooth detail changes
+
+```ts
+vg.lodBlend = 2;            // width of the blend band (default 2; 1 = off)
+vg.lodBlendTemporal = true; // with temporal anti-aliasing only (default false)
+```
+
+A cluster normally switches to its coarser version at one exact distance, all of its pixels at once. At about a
+pixel of error (the default threshold) that switch moves the surface by at most a pixel and does not show, so levels
+switch directly. When the effective threshold is higher (you set one, or the draw buffers force a coarser one), the
+switch shows, and **LOD blending** opens: each pixel shows the detail for its own threshold between t and
+t * `lodBlend`, from a per-pixel pattern, so detail moves from one level to the next a few pixels at a time. The band
+opens from 1.25 px and is fully `lodBlend` wide from 2.5 px. Only the clusters inside the band are drawn with the
+blend mask (two levels, with a discard); everything else keeps the normal, fully early-depth-tested path. Set `1` to
+never blend.
+
+Without temporal anti-aliasing the pattern is fixed on screen, and a cluster in the middle of a transition looks like
+a fine, even stipple. With TAA, set `lodBlendTemporal`: the pattern then changes every frame and TAA averages it into
+a smooth crossfade.
+
+### Temporal anti-aliasing
+
+Virtual meshes write their own motion vectors whenever a render pass asks for a `velocity` output, so three's TRAA
+works as usual:
+
+```ts
+import { traa } from 'three/addons/tsl/display/TRAANode.js';
+import { mrt, output, pass, velocity } from 'three/tsl';
+
+const scenePass = pass(scene, camera, { samples: 0 }); // TRAA needs single-sampled targets
+scenePass.setMRT(mrt({ output, velocity }));
+const pipeline = new THREE.RenderPipeline(renderer, traa(scenePass.getTextureNode('output'), scenePass.getTextureNode('depth'), scenePass.getTextureNode('velocity'), camera));
+vg.lodBlendTemporal = true;
+// each frame: pipeline.render();
+```
+
+TAA also smooths the edges of alpha-tested foliage, which otherwise shimmer at a distance.
+
 ## Performance budget (optional)
 
 ```ts
@@ -40,7 +78,10 @@ const vg = new VirtualGeometry({
 });
 ```
 
-You never see an overflow: before a buffer fills up, the threshold is raised temporarily, then given back.
+You never see an overflow. The capacity controller runs on the GPU, per pool: a cut that would not fit its buffers is
+selected again at a coarser threshold in the same frame, before anything is drawn, so even a camera jump or a fast
+zoom never drops clusters. Between frames the factor glides back a percent per frame while there is room.
+`vg.errorThreshold` keeps your value; `vg.lastStats.thresholdScale` shows the factor in use.
 
 ## Culling
 

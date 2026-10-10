@@ -1,16 +1,25 @@
 import * as THREE from 'three/webgpu';
-import { uniform } from 'three/tsl';
+import { uniform, velocity } from 'three/tsl';
 import type { VirtualMesh, VirtualMeshInstances, VirtualMeshOptions } from './VirtualMesh.js';
 import { OcclusionCulling } from './OcclusionCulling.js';
 import { VirtualMesh as VirtualMeshClass } from './VirtualMesh.js';
 import type { VirtualMeshData } from '../preprocess/buildVirtualMesh.js';
 import { GeometryPool, NO_DRAW_DISTANCE, type PoolCapacity } from './GeometryPool.js';
 import { virtualMeshesFromObject3D, type VirtualGeometryImport, type VirtualGeometryImportOptions } from '../import/fromObject3D.js';
+import { lodBlendFrame } from './lodBlend.js';
 
 export { VG_DEBUG_MODES } from '../constants.js';
 
 /** Length of the camera + settings vector compared by `VirtualGeometry.cutInputsChanged`. */
-const CUT_INPUT_COUNT = 16 + 16 + 12;
+const CUT_INPUT_COUNT = 16 + 16 + 13;
+
+/**
+ * Largest change of the error threshold per frame made by the budget controller (coarser, finer). With LOD blending
+ * a small change only moves a few pixels of each blend band to the next level, so the threshold glides instead of
+ * re-picking the whole screen at once.
+ */
+const THRESHOLD_RATE_UP = 1.03;
+const THRESHOLD_RATE_DOWN = 1.01;
 
 export interface VirtualGeometryStats {
   drawnMeshlets: number;
@@ -30,6 +39,11 @@ export interface VirtualGeometryStats {
   occludedInstances: number;
   /** Triangles drawn into shadow maps (the coarser shadow cut). */
   shadowTriangles: number;
+  /**
+   * Factor the GPU capacity controller applies to the error threshold of the camera cut (largest over pools): 1
+   * while the draw buffers have room, more while they would overflow at the requested threshold.
+   */
+  thresholdScale: number;
 }
 
 /**
@@ -39,12 +53,11 @@ export interface VirtualGeometryStats {
 const ZERO = new THREE.Vector3();
 
 /**
- * Threshold that brings a too-full draw buffer back to ~85%: triangles scale with about 1/threshold^2, so
- * one step lands near the target even from a large overflow (at most 2x per step, at least 4%).
+ * Threshold at which a cut that filled `use` of its draw buffers at `threshold` fills about 82%, toward finer detail,
+ * cautiously: the 1/threshold^2 rule underestimates how fast triangles grow where many instances sit near a level
+ * switch.
  */
-function capacityStep(threshold: number, use: number, max: number) {
-  return Math.max(threshold, Math.min(max, threshold * Math.min(2, Math.max(1.04, Math.sqrt(use / 0.85)))));
-}
+const refineThreshold = (threshold: number, use: number) => threshold * Math.pow(use / 0.82, 0.25);
 
 export interface VirtualGeometryOptions {
   /** Max triangles drawn per frame per pool (camera). Default 10M (120 MB of indices, under the 128 MB binding limit). */
@@ -67,11 +80,32 @@ export class VirtualGeometry {
   /** `projection[1][1] * viewportHeight / 2`: converts view-space error to pixels. */
   readonly projScale = uniform(1);
   readonly near = uniform(0.1);
-  /** Max projected error, in pixels, a meshlet may have to be drawn. */
+  /** Max projected error, in pixels, a meshlet may have to be drawn (the finest end of the LOD blend band). */
   readonly errorThreshold = uniform(1);
+  /**
+   * Lever: width of the LOD blend band, as a factor on the error threshold (default 2). Instead of switching each
+   * cluster to its parent at one distance (a pop), every pixel shows the cut for its own threshold between t and
+   * t * lodBlend, from a per-pixel pattern, so detail moves from one level to the next a few pixels at a time.
+   *
+   * Automatic: at an effective threshold of about a pixel (the default) a level switch moves the surface by at most
+   * a pixel and does not show, so levels switch directly and blending costs nothing. The band opens as the effective
+   * threshold rises (when you set a higher one, or the draw buffers force a coarser one), and is this wide from
+   * 2.5 px up. Blending costs while it is open: clusters in the band are drawn by two levels, with a discard. 1 turns
+   * it off.
+   */
+  lodBlend = 2;
+  /**
+   * Lever: change the blend pattern every frame (default false). Turn it on together with temporal anti-aliasing
+   * (e.g. three's TRAA), which averages the pattern into a smooth crossfade; without TAA a moving pattern shimmers.
+   */
+  lodBlendTemporal = false;
+  /** `max(1, lodBlend)` (set every frame). */
+  readonly lodBlendMax = uniform(2);
+  /** `maxErrorThreshold / errorThreshold`: the most the GPU capacity controller may scale the threshold by. */
+  readonly lodScaleLimit = uniform(64);
 
   /**
-   * Lever: target number of drawn triangles per frame. When > 0, the error threshold is adjusted (slowly, see
+   * Lever: target number of drawn triangles per frame. When > 0, the error threshold is adjusted (gliding, see
    * adaptThreshold) to keep the drawn triangle count near this budget. Off by default: a fixed threshold gives
    * the steadiest image, because LODs then only switch with distance, never all at once.
    */
@@ -82,18 +116,24 @@ export class VirtualGeometry {
    * The highest error threshold, in pixels, that the engine may switch to on its own to keep draw buffers from
    * overflowing. Default 64. Lower it to keep detail no matter what: if the scene still asks for more triangles than
    * the buffers hold, some clusters are then dropped (raise `maxTriangles` instead if that happens).
+   *
+   * The capacity controller runs on the GPU, per pool: when a cut would not fit its draw buffers it is selected again
+   * at a coarser threshold in the same frame, and between frames the threshold glides back by a percent per frame
+   * while there is room. `errorThreshold` keeps the value you set; `lastStats.thresholdScale` shows the factor.
    */
   maxErrorThreshold = 64;
-  /** Latest GPU readback, updated every `statsInterval` frames while a budget or HUD is active. */
+  /** Latest GPU readback, updated every `statsInterval` frames (every other frame while a draw buffer is nearly full). */
   lastStats: VirtualGeometryStats | null = null;
   statsInterval = 10;
   /** Frames updated so far. */
   frameCount = 0;
-  /** The user's threshold while the capacity guard holds a coarser one (no budget), else null. */
-  private guardBase: number | null = null;
   /** Consecutive stats readbacks with the drawn triangles outside the budget's deadband. */
   private outOfBand = 0;
-  private guardWritten = NaN;
+  /** Threshold the controllers glide toward, a few percent per frame (null: none), and the value last written. */
+  private thresholdTarget: number | null = null;
+  private thresholdWritten = NaN;
+  /** Threshold when the pending stats readback was issued: the cut it describes was made with about this value. */
+  private statsThreshold = 1;
   private statsPending = false;
   readonly frustumCulling = uniform(1, 'uint');
   readonly debugMode = uniform(0, 'uint');
@@ -356,19 +396,37 @@ export class VirtualGeometry {
     }
     if (this.freeze) return;
     this.occlusion.tick(performance.now());
+    this.stepThreshold();
+    const blend = Math.max(1, this.lodBlend);
+    if (this.lodBlendMax.value !== blend) this.lodBlendMax.value = blend;
+    const blendFrame = this.lodBlendTemporal ? this.frameCount % 64 : 0;
+    if (lodBlendFrame.value !== blendFrame) lodBlendFrame.value = blendFrame;
+    const scaleLimit = Math.max(1, this.maxErrorThreshold / this.errorThreshold.value);
+    if (this.lodScaleLimit.value !== scaleLimit) this.lodScaleLimit.value = scaleLimit;
+
+    // A pass that renders motion vectors (e.g. for TRAA) gets the VirtualMesh ones (see velocity.ts).
+    const velocityPass = !!(renderer.getMRT() as { outputNodes?: Record<string, unknown> } | null)?.outputNodes?.velocity;
+    for (const mesh of this.meshes) {
+      mesh.setVelocityOutput(velocityPass);
+      mesh.syncBlendPart();
+    }
 
     camera.updateMatrixWorld();
     this.viewMatrix.value.copy(camera.matrixWorldInverse);
-    if (!this.projectionMatrix.value.equals(camera.projectionMatrix)) this.projectionMatrix.value.copy(camera.projectionMatrix);
+    // Temporal anti-aliasing jitters the projection by a fraction of a pixel every frame. Selection and culling use
+    // the projection without that jitter (TRAA hands it to three's velocity node while it renders), so a still camera
+    // still skips the cut, and the cut does not flicker with the jitter.
+    const projection: THREE.Matrix4 = (velocity as unknown as { projectionMatrix: THREE.Matrix4 | null }).projectionMatrix ?? camera.projectionMatrix;
+    if (!this.projectionMatrix.value.equals(projection)) this.projectionMatrix.value.copy(projection);
     renderer.getDrawingBufferSize(this.size);
     // Errors are measured in CSS pixels, so a threshold means the same thing at any devicePixelRatio.
     const cssHeight = this.size.y / (this.errorInCssPixels ? renderer.getPixelRatio() : 1);
     // Only write uniforms that changed: a static camera then costs no uniform updates at all.
-    const projScale = camera.projectionMatrix.elements[5] * cssHeight * 0.5;
+    const projScale = projection.elements[5] * cssHeight * 0.5;
     if (this.projScale.value !== projScale) this.projScale.value = projScale;
     if (this.near.value !== camera.near) this.near.value = camera.near;
 
-    this.projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.projScreen.multiplyMatrices(projection, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.projScreen, THREE.WebGPUCoordinateSystem);
     for (let i = 0; i < 6; i++) {
       const { normal, constant } = this.frustum.planes[i];
@@ -395,9 +453,11 @@ export class VirtualGeometry {
     }
 
     // Anything the cut depends on changed: every pool needs a new cut.
-    if (this.cutInputsChanged(camera, renderer.getPixelRatio())) {
+    if (this.cutInputsChanged(camera, projection, renderer.getPixelRatio())) {
       for (const pool of this.pools) pool.dirty = true;
     }
+    // A pool whose capacity controller is still steering redoes its cut, even with a still camera.
+    for (const pool of this.pools) if (pool.controllerActive) pool.dirty = true;
 
     this.preparePools(renderer);
     const nodes = this.computeList;
@@ -431,14 +491,16 @@ export class VirtualGeometry {
     }
 
     this.frameCount++;
-    // One small readback every statsInterval frames feeds the budget controller, the capacity guard (always
-    // on: an overflow would flicker) and the occlusion auto pause.
-    if (this.meshes.length > 0 && !this.statsPending && this.frameCount % this.statsInterval === 0) {
+    // One small readback every statsInterval frames feeds the budget controller, the stats and whether a pool's
+    // capacity controller still needs frames; every other frame while the budget controller glides.
+    const interval = this.thresholdTarget !== null ? Math.min(2, this.statsInterval) : this.statsInterval;
+    if (this.meshes.length > 0 && !this.statsPending && this.frameCount % interval === 0) {
       this.statsPending = true;
+      this.statsThreshold = this.errorThreshold.value;
       this.readStats(renderer)
         .then((s) => {
           this.lastStats = s;
-          this.adaptThreshold(s);
+          if (this.triangleBudget > 0) this.adaptThreshold(s);
         })
         .finally(() => (this.statsPending = false));
     }
@@ -450,17 +512,18 @@ export class VirtualGeometry {
    * (and records the new values). Exact comparison on purpose: an unmoved camera recomputes the same
    * matrices bit for bit, while any real change, including a budget-controller step, differs.
    */
-  private cutInputsChanged(camera: THREE.PerspectiveCamera, pixelRatio: number): boolean {
+  private cutInputsChanged(camera: THREE.PerspectiveCamera, projection: THREE.Matrix4, pixelRatio: number): boolean {
     const cur = this.cutInputsScratch;
     let i = 0;
     for (let k = 0; k < 16; k++) cur[i++] = camera.matrixWorldInverse.elements[k];
-    for (let k = 0; k < 16; k++) cur[i++] = camera.projectionMatrix.elements[k];
+    for (let k = 0; k < 16; k++) cur[i++] = projection.elements[k];
     cur[i++] = camera.near;
     cur[i++] = this.size.x;
     cur[i++] = this.size.y;
     cur[i++] = pixelRatio;
     cur[i++] = this.errorInCssPixels ? 1 : 0;
     cur[i++] = this.errorThreshold.value;
+    cur[i++] = this.lodBlend;
     cur[i++] = this.minPixelRadius.value;
     cur[i++] = this.frustumCulling.value;
     cur[i++] = this.debugMode.value;
@@ -479,62 +542,49 @@ export class VirtualGeometry {
   }
 
   /**
-   * Slow multiplicative controller. Drawn triangles grow roughly with 1/threshold^2. Every change of the
-   * threshold re-picks LODs across the whole screen, so it moves rarely (deadband) and in small steps.
-   *
-   * Draw capacity is a hard constraint: an overflowing mesh drops meshlets in a different order every frame,
-   * which flickers. So the controller coarsens *before* a buffer is full, never refines into one, and may go
-   * above `thresholdRange[1]` only for capacity, coming back down as soon as there is room.
+   * Budget controller (only with `triangleBudget`): picks the threshold to glide toward (see stepThreshold) from a
+   * stats readback. Drawn triangles grow roughly with 1/threshold^2. Capacity is not its job: the GPU controller keeps
+   * every cut inside its draw buffers (see `maxErrorThreshold`).
    */
   private adaptThreshold(stats: VirtualGeometryStats) {
-    const t = this.errorThreshold.value;
+    const t = this.statsThreshold;
+    const now = this.errorThreshold.value;
     const use = stats.capacityUse;
-    if (this.triangleBudget <= 0) {
-      this.guardCapacity(stats, t);
-      return;
-    }
-    this.guardBase = null;
-    const [lo, hi] = this.thresholdRange;
-    if (stats.overflow || use > 0.9) {
-      this.errorThreshold.value = capacityStep(t, use, this.maxErrorThreshold);
-      return;
-    }
+    // Refining, and the buffers are filling up: stop where we are.
+    if (this.thresholdTarget !== null && this.thresholdTarget < now && use >= 0.75) this.thresholdTarget = null;
     if (stats.drawnTriangles <= 0) return;
     const ratio = stats.drawnTriangles / this.triangleBudget;
-    // Every change re-picks LODs across the whole screen at once, which is far more visible than the
-    // distance-driven switches of a fixed threshold. So: a wide deadband, and only after the count stayed out of
-    // it for several readbacks in a row (moving through a scene makes it swing briefly all the time).
-    if (Math.abs(ratio - 1) < 0.2) {
+    // Moving through a scene makes the count swing briefly all the time: act only on a lasting difference.
+    if (Math.abs(ratio - 1) < 0.15) {
       this.outOfBand = 0;
       return;
     }
-    if (++this.outOfBand < 3) return;
-    let next = t * Math.min(1.03, Math.max(0.97, Math.sqrt(ratio)));
-    // Back inside the range: gradually from above (capacity pushed it there), clamped otherwise.
-    next = t > hi ? Math.max(hi, Math.min(next, t * 0.97)) : Math.min(hi, Math.max(lo, next));
-    // Refining multiplies the drawn triangles by about (t / next)^2: never step into a full buffer.
-    if (next < t && use * (t / next) ** 2 > 0.85) return;
-    this.errorThreshold.value = next;
+    if (++this.outOfBand < 2) return;
+    const [lo, hi] = this.thresholdRange;
+    let next = Math.min(hi, Math.max(lo, t * Math.sqrt(ratio)));
+    // Refining multiplies the drawn triangles by about (t / next)^2: not into a full buffer.
+    if (next < t) next = Math.max(next, refineThreshold(t, use));
+    this.glideTo(next);
   }
 
-  /**
-   * Without a budget the threshold is the user's, except that draw capacity stays a hard limit: coarsen
-   * temporarily before a buffer fills up, and return to the user's value once there is room again.
-   */
-  private guardCapacity(stats: VirtualGeometryStats, t: number) {
-    // Changed since the guard last wrote it (by the user, or the budget was just switched off): new target.
-    if (t !== this.guardWritten) this.guardBase = null;
-    let next = t;
-    if (stats.overflow || stats.capacityUse > 0.9) {
-      this.guardBase ??= t;
-      next = capacityStep(t, stats.capacityUse, this.maxErrorThreshold);
-    } else if (this.guardBase !== null && t > this.guardBase) {
-      const back = Math.max(this.guardBase, t * 0.97);
-      if (stats.capacityUse * (t / back) ** 2 <= 0.85) next = back;
-      if (next === this.guardBase) this.guardBase = null;
+  private glideTo(target: number) {
+    this.thresholdTarget = target === this.errorThreshold.value ? null : target;
+  }
+
+  /** Every frame: moves the threshold a few percent toward the controllers' target. */
+  private stepThreshold() {
+    const t = this.errorThreshold.value;
+    if (t !== this.thresholdWritten && !Number.isNaN(this.thresholdWritten)) {
+      // Set by the user: their value wins over a glide in progress.
+      this.thresholdTarget = null;
     }
-    if (next !== t) this.errorThreshold.value = next;
-    this.guardWritten = this.errorThreshold.value;
+    const target = this.thresholdTarget;
+    if (target !== null) {
+      const next = target > t ? Math.min(target, t * THRESHOLD_RATE_UP) : Math.max(target, t / THRESHOLD_RATE_DOWN);
+      this.errorThreshold.value = next;
+      if (next === target) this.thresholdTarget = null;
+    }
+    this.thresholdWritten = this.errorThreshold.value;
   }
 
   /** GPU -> CPU readback of the last culling result. Async; never call every frame. One small readback per pool. */
@@ -550,6 +600,7 @@ export class VirtualGeometry {
       capacityUse: 0,
       occludedInstances: 0,
       shadowTriangles: 0,
+      thresholdScale: 1,
     };
     for (const mesh of this.meshes) {
       if (!mesh.visible) continue;
@@ -566,6 +617,7 @@ export class VirtualGeometry {
       result.visibleInstances += c.camera.survived;
       result.occludedInstances += c.occluded;
       result.shadowTriangles += Math.min(c.shadow.requestedTriangles, cap.shadowTriangles);
+      result.thresholdScale = Math.max(result.thresholdScale, c.scale[0]);
       if (c.camera.selected > cap.meshlets || c.camera.requestedTriangles > cap.triangles) result.overflow = true;
       if (c.shadow.selected > cap.meshlets || c.shadow.requestedTriangles > cap.shadowTriangles) result.overflow = true;
       result.capacityUse = Math.max(

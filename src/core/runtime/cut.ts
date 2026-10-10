@@ -1,5 +1,6 @@
 import { ERROR_INFINITY, FAST_PATH_MARGIN, FAST_PATH_MAX_MESHLETS, MESHLET_BOUNDS_STRIDE } from '../constants.js';
 import type { VirtualMeshData } from '../preprocess/buildVirtualMesh.js';
+import { lodFadeRange } from './lodBlend.js';
 
 /** Camera parameters the LOD test needs. Same values the GPU pass uses. */
 export interface CutView {
@@ -47,6 +48,55 @@ export function selectCut(data: VirtualMeshData, view: CutView, threshold: numbe
 }
 
 /**
+ * CPU reference for the GPU selection with LOD blending (see `VirtualGeometry.lodBlend`): every meshlet that is in
+ * the cut for some threshold in [threshold, threshold * blend], with the blend steps it draws, [lo, hi) of
+ * 0..LOD_FADE_STEPS - 1. `hi[i] === 0` means meshlet i is not drawn. The meshlets with lo <= s < hi form a complete
+ * cut for every step s.
+ */
+export function selectBlendCut(data: VirtualMeshData, view: CutView, threshold: number, blend: number): { lo: Uint8Array; hi: Uint8Array } {
+  const v = view.viewMatrix;
+  const B = data.meshletBounds;
+  const lo = new Uint8Array(data.meshletCount);
+  const hi = new Uint8Array(data.meshletCount);
+  const s = view.scale ?? 1;
+  const projectedError = (cx: number, cy: number, cz: number, r: number, error: number) => {
+    if (error >= ERROR_INFINITY * 0.5) return Infinity;
+    const x = v[0] * cx + v[4] * cy + v[8] * cz + v[12];
+    const y = v[1] * cx + v[5] * cy + v[9] * cz + v[13];
+    const z = v[2] * cx + v[6] * cy + v[10] * cz + v[14];
+    return (error * s * view.projScale) / Math.max(Math.hypot(x, y, z) - r * s, view.near);
+  };
+  for (let i = 0; i < data.meshletCount; i++) {
+    const b = i * MESHLET_BOUNDS_STRIDE;
+    const own = projectedError(B[b], B[b + 1], B[b + 2], B[b + 3], B[b + 8]);
+    const parent = projectedError(B[b + 4], B[b + 5], B[b + 6], B[b + 7], B[b + 9]);
+    const range = lodFadeRange(own, parent, threshold, blend);
+    if (range) [lo[i], hi[i]] = range;
+  }
+  return { lo, hi };
+}
+
+/**
+ * Checks that a cut draws no surface twice: no selected meshlet has a selected meshlet among its coarser
+ * replacements (recursively). Returns the indices of selected meshlets that overlap a coarser selected one.
+ */
+export function verifyCutOverlap(data: VirtualMeshData, selected: Uint8Array): number[] {
+  const { replacementGroup: groupOf, replacementStart: start, replacementIndices: list } = data;
+  const coarserSelected = new Int8Array(data.meshletCount).fill(-1);
+  const below = (i: number): boolean => {
+    if (coarserSelected[i] !== -1) return coarserSelected[i] === 1;
+    let result = false;
+    const g = groupOf[i];
+    if (g >= 0) for (let k = start[g]; !result && k < start[g + 1]; k++) result = selected[list[k]] === 1 || below(list[k]);
+    coarserSelected[i] = result ? 1 : 0;
+    return result;
+  };
+  const overlaps: number[] = [];
+  for (let i = 0; i < data.meshletCount; i++) if (selected[i] && below(i)) overlaps.push(i);
+  return overlaps;
+}
+
+/**
  * Checks that a cut has no holes: every leaf meshlet (LOD 0) is covered by a selected meshlet on its
  * path to the coarsest level (itself or one of its replacements, recursively).
  * Returns the indices of uncovered leaves (empty array = valid cut).
@@ -89,11 +139,13 @@ function lodDistanceBounds(data: VirtualMeshData, view: CutView): [number, numbe
  *
  * Every LOD and parent sphere lies inside `lodBoundsSphere`, so the distance to any of them is within
  * [D - R, D + R]. A level can contribute only if its smallest own error could be within the threshold
- * at the farthest distance and its largest parent error could exceed it at the nearest.
+ * at the farthest distance and its largest parent error could exceed it at the nearest. With `blend` (see
+ * `selectBlendCut`), the band [threshold, threshold * blend].
  * Returns [start, end) or [0, 0] when nothing can be selected.
  */
-export function instanceMeshletRange(data: VirtualMeshData, view: CutView, threshold: number): [number, number] {
+export function instanceMeshletRange(data: VirtualMeshData, view: CutView, threshold: number, blend = 1): [number, number] {
   const [dMin, dMax] = lodDistanceBounds(data, view);
+  const high = threshold * Math.max(1, blend);
 
   const k = (view.scale ?? 1) * view.projScale;
   let lo = -1;
@@ -102,7 +154,7 @@ export function instanceMeshletRange(data: VirtualMeshData, view: CutView, thres
   for (let l = 0; l < levels; l++) {
     const minOwn = data.levelErrors[l * 2];
     const maxParent = data.levelErrors[l * 2 + 1];
-    const ownPossible = (minOwn * k) / dMax <= threshold;
+    const ownPossible = (minOwn * k) / dMax <= high;
     const parentPossible = maxParent >= ERROR_INFINITY * 0.5 || (maxParent * k) / dMin > threshold;
     if (ownPossible && parentPossible) {
       if (lo < 0) lo = l;
@@ -122,10 +174,12 @@ export function instanceMeshletRange(data: VirtualMeshData, view: CutView, thres
  *  - largest own error projects to <= threshold at dMin (its closest possible distance), and
  *  - smallest parent error projects to > threshold at dMax (its farthest possible distance).
  * A small relative margin keeps float rounding on the GPU from flipping a borderline meshlet.
+ * With `blend`, guaranteed means drawn over every pixel: own error below the band, parent error above it.
  * The caller must also check that the instance is fully inside the frustum (see `cullBoundsSphere`).
  */
-export function instanceGuaranteedRange(data: VirtualMeshData, view: CutView, threshold: number): [number, number] | null {
+export function instanceGuaranteedRange(data: VirtualMeshData, view: CutView, threshold: number, blend = 1): [number, number] | null {
   const [dMin, dMax] = lodDistanceBounds(data, view);
+  const high = threshold * Math.max(1, blend);
   const margin = FAST_PATH_MARGIN;
   const k = (view.scale ?? 1) * view.projScale;
 
@@ -137,7 +191,7 @@ export function instanceGuaranteedRange(data: VirtualMeshData, view: CutView, th
   for (let l = 0; l < levels; l++) {
     const minOwn = data.levelErrors[l * 2];
     const maxParent = data.levelErrors[l * 2 + 1];
-    const ownPossible = (minOwn * k) / dMax <= threshold;
+    const ownPossible = (minOwn * k) / dMax <= high;
     const parentPossible = maxParent >= ERROR_INFINITY * 0.5 || (maxParent * k) / dMin > threshold;
     if (!ownPossible || !parentPossible) continue;
     if (lo < 0) lo = l;
@@ -148,7 +202,7 @@ export function instanceGuaranteedRange(data: VirtualMeshData, view: CutView, th
     const maxOwn = data.levelGuardErrors[l * 2];
     const minParent = data.levelGuardErrors[l * 2 + 1];
     const ownSure = (maxOwn * k) / dMin <= threshold * (1 - margin);
-    const parentSure = minParent >= ERROR_INFINITY * 0.5 || (minParent * k) / dMax > threshold * (1 + margin);
+    const parentSure = minParent >= ERROR_INFINITY * 0.5 || (minParent * k) / dMax > high * (1 + margin);
     if (ownSure && parentSure) guaranteedMeshlets += size;
   }
   if (lo < 0) return null;

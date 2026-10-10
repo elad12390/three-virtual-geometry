@@ -19,6 +19,7 @@ import {
 } from '../constants.js';
 import { partitionMeshlets } from './partition.js';
 import { buildVoxelProxy, VOXEL_ERROR_CELLS, type VoxelProxy } from './voxelProxy.js';
+import { simplifyAggregate } from './aggregate.js';
 
 export interface VirtualMeshSource {
   /** xyz per vertex */
@@ -62,6 +63,12 @@ export interface VirtualMeshBuildOptions {
    * its cheap coarse levels closer to the camera. Builds take longer and use more memory.
    */
   voxelResolution?: number;
+  /**
+   * Keep simplifying groups of separate small pieces (leaf cards, grass blades) when edge collapses stall: each piece
+   * is simplified on its own, then neighbouring pieces are thinned in pairs, the kept piece widened to cover both
+   * (see aggregate.ts). Without it such groups keep every piece up to the voxel levels. Default true.
+   */
+  aggregateLods?: boolean;
   onProgress?: (fraction: number) => void | Promise<void>;
 }
 
@@ -124,6 +131,8 @@ export interface VirtualMeshData {
     lodLevels: number;
     /** Coarse levels built from voxel proxies (see voxelProxy.ts). */
     voxelLevels: number;
+    /** Groups simplified piece by piece (see aggregate.ts; absent in files baked before it). */
+    aggregateGroups?: number;
     buildMs: number;
   };
 }
@@ -159,6 +168,7 @@ const DEFAULTS = {
   minRootTriangles: 4,
   voxelLods: true,
   voxelResolution: 64,
+  aggregateLods: true,
 };
 
 /** The tail (whole-object simplification, where voxel proxies can take over) starts at this many triangles. */
@@ -186,6 +196,8 @@ export async function buildVirtualMesh(src: VirtualMeshSource, options: VirtualM
   // Vertices sharing a position (UV/normal seams) are the same vertex topologically.
   let weld = MeshoptSimplifier.generatePositionRemap(positions, 3);
   let voxelLevels = 0;
+  /** Groups simplified piece by piece (see aggregate.ts). */
+  let aggregateLevels = 0;
   const flags: SimplifierFlags[] = ['LockBorder', 'ErrorAbsolute'];
   if (opts.prune) flags.push('Prune');
 
@@ -200,17 +212,50 @@ export async function buildVirtualMesh(src: VirtualMeshSource, options: VirtualM
   for (let level = 1; level <= opts.maxLodLevels && current.length > 1; level++) {
     // Small enough to treat as one piece: the tail takes over (and may switch to voxel proxies).
     if (opts.tailSimplify && lastTriangles <= TAIL_START_TRIANGLES) break;
+    // Aggregate geometry: once a voxel stand-in of the whole mesh is as accurate as this level with half its
+    // triangles, the tail takes over too. Its voxel levels are measured against the original, so their error does
+    // not pile up level after level like that of thinned pieces.
+    if (opts.tailSimplify && opts.voxelLods && aggregateLevels > 0 && voxelBeats(current, lastTriangles)) break;
     const groups = partitionMeshlets(current, opts.groupSize);
     const next: WipMeshlet[] = [];
+    const owner = opts.aggregateLods ? groupOwners(groups, current) : null;
+    // Error of a voxel stand-in for the whole mesh with half this level's triangles: groups thinned piece by piece
+    // must do better than that, or they are left to the voxel levels of the tail.
+    let voxelLimit = NaN;
 
-    for (const groupIdx of groups) {
+    for (const [g, groupIdx] of groups.entries()) {
       const group = groupIdx.map((i) => current[i]);
       const merged = concatIndices(group);
       const local = compact(merged, positions);
       const target = Math.max(3, Math.floor((merged.length * opts.simplifyRatio) / 3) * 3);
       const [simplified, simplifyError] = MeshoptSimplifier.simplify(local.indices, local.positions, 3, target, 1e10, flags);
+      let globalIndices: Uint32Array = new Uint32Array(simplified.length);
+      for (let i = 0; i < simplified.length; i++) globalIndices[i] = local.toGlobal[simplified[i]];
+      // meshopt's error is vertex displacement; it misses silhouette loss (pruned parts, collapsed sheets).
+      let shapeError = Math.max(simplifyError, extentShrink(local.indices, simplified, local.positions));
 
-      if (simplified.length > merged.length * opts.maxGroupKeepRatio) {
+      // Stalled well short of the target, as groups of separate pieces do (leaves, grass): simplify piece by piece.
+      if (owner && simplified.length > target * 1.25) {
+        const aggregate = simplifyAggregate(merged, positions, weld, owner, g, target / 3);
+        if (aggregate && Number.isNaN(voxelLimit)) voxelLimit = opts.tailSimplify && opts.voxelLods ? voxelError(lastTriangles) : Infinity;
+        const childError = Math.max(...group.map((m) => m.error));
+        if (aggregate && aggregate.indices.length < simplified.length && childError + aggregate.error < voxelLimit) {
+          const s = aggregate.newSources;
+          if (s.length > 0) {
+            const pick = (src: Float32Array, size: number) => {
+              const out = new Float32Array(s.length * size);
+              s.forEach((v, i) => out.set(src.subarray(v * size, v * size + size), i * size));
+              return out;
+            };
+            appendVertices(aggregate.newPositions, pick(normals, 3), colors ? pick(colors, 3) : null, uvs ? pick(uvs, 2) : null);
+          }
+          globalIndices = aggregate.indices;
+          shapeError = Math.max(aggregate.error, extentShrink(merged, globalIndices, positions));
+          aggregateLevels++;
+        }
+      }
+
+      if (globalIndices.length > merged.length * opts.maxGroupKeepRatio) {
         continue; // cannot reduce this group any further: its meshlets stay roots
       }
 
@@ -218,16 +263,12 @@ export async function buildVirtualMesh(src: VirtualMeshSource, options: VirtualM
       // and the group error is never smaller than any child error.
       const lodSphere = enclosingSphere(group.map((m) => m.lodSphere));
       const childError = Math.max(...group.map((m) => m.error));
-      // meshopt's error is vertex displacement; it misses silhouette loss (pruned parts, collapsed sheets).
-      const shapeError = Math.max(simplifyError, extentShrink(local.indices, simplified, local.positions));
       const error = childError + Math.max(shapeError, 1e-7);
       for (const child of group) {
         child.parentSphere = lodSphere;
         child.parentError = error;
       }
 
-      const globalIndices = new Uint32Array(simplified.length);
-      for (let i = 0; i < simplified.length; i++) globalIndices[i] = local.toGlobal[simplified[i]];
       if (globalIndices.length > 0) {
         const outputs = splitIntoMeshlets(globalIndices, level, lodSphere, error);
         next.push(...outputs);
@@ -252,7 +293,43 @@ export async function buildVirtualMesh(src: VirtualMeshSource, options: VirtualM
   if (opts.tailSimplify) lodLevels = simplifyTail(all.filter((m) => m.parentError >= ERROR_INFINITY), lodLevels);
 
   await opts.onProgress?.(1);
-  return pack({ positions, normals, colors: colors ?? undefined, uvs: uvs ?? undefined, indices: src.indices }, all, lodLevels, voxelLevels, performance.now() - t0);
+  return pack({ positions, normals, colors: colors ?? undefined, uvs: uvs ?? undefined, indices: src.indices }, all, lodLevels, voxelLevels, performance.now() - t0, aggregateLevels);
+
+  /** Smallest error of a simplified voxel proxy with at most half of `triangles` (Infinity: none gets there). */
+  function voxelError(triangles: number) {
+    const target = Math.max(3, Math.floor(triangles / 2) * 3);
+    let best = Infinity;
+    for (const resolution of voxelResolutions(opts.voxelResolution)) {
+      const proxy = voxelProxy(resolution);
+      if (!proxy) continue;
+      const [simplified, proxyError] = MeshoptSimplifier.simplify(proxy.indices, proxy.positions, 3, Math.min(target, proxy.indices.length), 1e10, ['ErrorAbsolute']);
+      if (simplified.length > 0 && simplified.length <= target) best = Math.min(best, VOXEL_ERROR_CELLS * proxy.cellSize + proxyError);
+    }
+    return best;
+  }
+
+  /** True when a simplified voxel proxy with at most half of `triangles` has no more error than `meshlets`. */
+  function voxelBeats(meshlets: WipMeshlet[], triangles: number) {
+    let levelError = 0;
+    for (const m of meshlets) levelError = Math.max(levelError, m.error);
+    return voxelError(triangles) <= levelError;
+  }
+
+  /** Per welded vertex: the group whose meshlets use it, or -2 when meshlets of several groups do (-1: unused). */
+  function groupOwners(groups: number[][], meshlets: WipMeshlet[]) {
+    const owner = new Int32Array(weld.length).fill(-1);
+    groups.forEach((group, g) => {
+      for (const i of group) {
+        const indices = meshlets[i].indices;
+        for (let k = 0; k < indices.length; k++) {
+          const w = weld[indices[k]];
+          if (owner[w] === -1) owner[w] = g;
+          else if (owner[w] !== g) owner[w] = -2;
+        }
+      }
+    });
+    return owner;
+  }
 
   /** Adds vertices to the shared buffers and returns the index of the first one. */
   function appendVertices(p: Float32Array, n: Float32Array, c: Float32Array | null, uv: Float32Array | null) {
@@ -404,7 +481,7 @@ export async function buildVirtualMesh(src: VirtualMeshSource, options: VirtualM
   }
 }
 
-function pack(src: VirtualMeshSource, unsorted: WipMeshlet[], lodLevels: number, voxelLevels: number, buildMs: number): VirtualMeshData {
+function pack(src: VirtualMeshSource, unsorted: WipMeshlet[], lodLevels: number, voxelLevels: number, buildMs: number, aggregateGroups: number): VirtualMeshData {
   // Sorted by LOD level so every level is a contiguous range (used for per-instance level ranges).
   const all = [...unsorted].sort((a, b) => a.lodLevel - b.lodLevel);
   const meshletCount = all.length;
@@ -437,7 +514,7 @@ function pack(src: VirtualMeshSource, unsorted: WipMeshlet[], lodLevels: number,
   const meshletTriangles = new Uint32Array(indices.length / 3);
   let firstIndex = 0;
   let vertexOffset = 0;
-  const stats = { leafTriangles: 0, leafMeshlets: 0, rootTriangles: 0, rootMeshlets: 0, lodLevels, voxelLevels, buildMs };
+  const stats = { leafTriangles: 0, leafMeshlets: 0, rootTriangles: 0, rootMeshlets: 0, lodLevels, voxelLevels, aggregateGroups, buildMs };
   all.forEach((m, i) => {
     indices.set(m.indices, firstIndex);
     meshletVertices.set(m.vertices, vertexOffset);

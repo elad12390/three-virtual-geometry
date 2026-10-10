@@ -10,7 +10,7 @@ import { decodeVirtualMesh, encodeVirtualMesh, VG_FORMAT_VERSION } from './seria
  * Part of every cache key. Bump it whenever `buildVirtualMesh` produces different output for the same input
  * (algorithm or default changes), so stale cached builds are never returned.
  */
-export const VG_BUILD_VERSION = 3;
+export const VG_BUILD_VERSION = 8;
 
 export interface VirtualGeometryCacheOptions {
   /**

@@ -15,7 +15,8 @@
  *                cut (camera and shadow). Instances whose few meshlets are all certain to pass emit them
  *                directly (fast path); the others go to a work list.
  *  3. meshlet  - one workgroup per work item: per-meshlet frustum/occlusion culling and the LOD test
- *                `parentError > t && error <= t`. Selected meshlets get a draw slot and a range inside their
+ *                `parentError > t && error <= t`, widened to the blend band [t, t * k] when the threshold is high
+ *                enough for level switches to show (see lodBlend.ts). Selected meshlets get a draw slot, their blend range and a range inside their
  *                mesh's region of the index buffer.
  *  4. prefix   - one thread: lays the meshes' regions out one after another and writes each mesh's draw args.
  *  5. expand   - one workgroup per drawn meshlet: writes 3 indices per triangle. An index encodes
@@ -43,6 +44,7 @@ import {
   instanceIndex,
   length,
   localId,
+  log,
   mat4,
   max,
   min,
@@ -50,12 +52,15 @@ import {
   normalize,
   numWorkgroups,
   select,
+  smoothstep,
+  sqrt,
   storage,
   uint,
   uniform,
   unpackUnorm2x16,
   uvec4,
   varyingProperty,
+  vec2,
   vec3,
   vec4,
   vertexIndex,
@@ -67,9 +72,11 @@ import { ERROR_INFINITY, FAST_PATH_MARGIN, FAST_PATH_MAX_MESHLETS, MAX_MESHLET_V
 import type { VirtualMeshData } from '../preprocess/buildVirtualMesh.js';
 import type { VirtualGeometry } from './VirtualGeometry.js';
 import { vgUv } from './vgMaterial.js';
+import { FULL_FADE_BITS, LOD_FADE_STEPS, vgFadeVarying } from './lodBlend.js';
 
 const minNode = min as (a: unknown, b: unknown) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
 const maxNode = max as (a: unknown, b: unknown) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
+const logNode = log as (a: unknown) => any; // eslint-disable-line @typescript-eslint/no-explicit-any
 type Node = any; // TSL node typings are too strict for the graph code below; runtime is verified in the browser
 
 /** World-space normal of the current vertex, usable in material color/roughness nodes. */
@@ -110,6 +117,27 @@ const C_SURVIVED = 2;
 const C_WORK = 3;
 const C_REQUESTED = 4;
 const PER_MESH_COUNTERS = 2 + 2 * CUT_COUNTERS;
+/**
+ * GPU-resident capacity controller, per pool: per cut the scale applied to the error threshold, the fill of the last
+ * cut (fraction of its draw buffer) and whether this frame's cut is being redone. Fixed point in the counters buffer,
+ * after the per-mesh counters (a separate buffer would exceed WebGPU's 8 storage buffers per stage in the instance
+ * pass); the reset pass leaves them alone, so they carry over from frame to frame.
+ */
+const S_SCALE = 0;
+const S_FILL = 2;
+const S_RETRY = 4;
+const LOD_STATE_SIZE = 8;
+/** The state is stored in fixed point: value * STATE_FIXED as an integer. */
+const STATE_FIXED = 10000;
+/** Extra selection rounds a frame may run when its cut overflows a draw buffer (each at a coarser threshold). */
+const RETRY_ROUNDS = 2;
+/** Fill the controller aims for, and the band in which it holds still. */
+const FILL_TARGET = 0.82;
+const FILL_HIGH = 0.9;
+const FILL_LOW = 0.75;
+/** Effective camera threshold (pixels) below which levels switch without blending, and from which the band is full. */
+const LOD_BLEND_FROM = 1.25;
+const LOD_BLEND_FULL = 2.5;
 
 export interface PoolCapacity {
   /** Max meshlets drawn per frame, per cut. */
@@ -206,6 +234,10 @@ export class GeometryPool {
 
   // per frame (rebuilt with the nodes)
   private countersAttribute!: THREE.StorageBufferAttribute;
+  /** First word of the capacity controller's state in the counters buffer (see S_SCALE). */
+  private lodStateBase = 0;
+  /** From the last readback: the GPU controller is still moving its scale, so the cut must be redone every frame. */
+  controllerActive = false;
   drawArgsAttribute!: THREE.IndirectStorageBufferAttribute;
   cameraIndex!: THREE.StorageBufferAttribute;
   shadowIndex!: THREE.StorageBufferAttribute;
@@ -563,23 +595,34 @@ export class GeometryPool {
     const cells: Node = storageOf(this.cells, 'vec4').toReadOnly();
 
     // Per-frame buffers.
-    // counters: PER_MESH_COUNTERS globals, then per cut and mesh slot (requested indices, region start).
-    this.countersAttribute = new THREE.StorageBufferAttribute(new Uint32Array(PER_MESH_COUNTERS + 2 * slots * 2), 1);
+    // counters: PER_MESH_COUNTERS globals, then per cut, mesh slot and part (requested indices, region start). Part 0
+    // holds the meshlets drawn over every pixel, part 1 those inside an LOD blend band: only part 1 is drawn with
+    // the blend mask, since a shader that may discard loses early depth testing (and hidden-surface removal).
+    this.lodStateBase = PER_MESH_COUNTERS + 2 * slots * 4;
+    const counterWords = new Uint32Array(this.lodStateBase + LOD_STATE_SIZE);
+    counterWords.fill(STATE_FIXED, this.lodStateBase, this.lodStateBase + 2); // threshold scale 1 for both cuts
+    this.countersAttribute = new THREE.StorageBufferAttribute(counterWords, 1);
     // drawIndexedIndirect args per cut and mesh slot: indexCount, instanceCount, firstIndex, baseVertex, firstInstance.
-    this.drawArgsAttribute = new THREE.IndirectStorageBufferAttribute(new Uint32Array(2 * slots * 5), 1);
+    this.drawArgsAttribute = new THREE.IndirectStorageBufferAttribute(new Uint32Array(2 * slots * 2 * 5), 1);
     this.cameraIndex = new THREE.StorageBufferAttribute(new Uint32Array(cameraIndexCapacity), 1);
     this.shadowIndex = new THREE.StorageBufferAttribute(new Uint32Array(shadowIndexCapacity), 1);
     const cellListAttribute = new THREE.StorageBufferAttribute(new Uint32Array(cellCapacity * 4), 4);
     // (instance, first meshlet, end meshlet, mesh slot | occlusion << 31) per cut.
     const workListAttribute = new THREE.StorageBufferAttribute(new Uint32Array(instanceCapacity * 2 * 4), 4);
-    // (instance, meshlet, first index within the mesh's region, triangle count); slots are absolute over both cuts.
+    // (instance, meshlet, first index within the mesh's region, triangle count | blend range << 8: lo in bits 8-15, hi in
+    // bits 16-23, see lodBlend.ts); slots are absolute over both cuts.
     const drawListAttribute = new THREE.StorageBufferAttribute(new Uint32Array(maxDrawn * 2 * 4), 4);
     const dispatchAttr = () => new THREE.IndirectStorageBufferAttribute(new Uint32Array(3), 3);
     const instanceArgsAttribute = dispatchAttr();
     const meshletArgsAttributes = [dispatchAttr(), dispatchAttr()];
     const expandArgsAttributes = [dispatchAttr(), dispatchAttr()];
 
+    const retryInstanceArgsAttribute = dispatchAttr();
     const counters: Node = storage(this.countersAttribute, 'uint', this.countersAttribute.count).toAtomic();
+    const stateWord = (i: number) => counters.element(this.lodStateBase + i);
+    const getState = (i: number): Node => float((atomicLoad(stateWord(i)) as Node).toVar()).div(STATE_FIXED);
+    const setState = (i: number, value: Node | number) => atomicStore(stateWord(i), uint(float(value).mul(STATE_FIXED).round()));
+    const retryInstanceArgs: Node = storage(retryInstanceArgsAttribute, 'uint', 3);
     const drawArgs: Node = storage(this.drawArgsAttribute, 'uint', this.drawArgsAttribute.count);
     const cameraIndex: Node = storage(this.cameraIndex, 'uint', cameraIndexCapacity);
     const shadowIndex: Node = storage(this.shadowIndex, 'uint', shadowIndexCapacity);
@@ -593,13 +636,33 @@ export class GeometryPool {
     const expandArgs = expandArgsAttributes.map((a) => storage(a, 'uint', 3) as Node);
 
     const counter = (cut: number, i: number) => counters.element(2 + cut * CUT_COUNTERS + i);
-    const meshCount = (cut: number, slot: Node) => counters.element(uint(PER_MESH_COUNTERS + cut * slots * 2).add(slot.mul(2)));
-    const meshStart = (cut: number, slot: Node) => counters.element(uint(PER_MESH_COUNTERS + cut * slots * 2 + 1).add(slot.mul(2)));
+    const meshCount = (cut: number, slot: Node, part: Node | number) => counters.element(uint(PER_MESH_COUNTERS + cut * slots * 4).add(slot.mul(4)).add(uint(part).mul(2)));
+    const meshStart = (cut: number, slot: Node, part: Node | number) => counters.element(uint(PER_MESH_COUNTERS + cut * slots * 4 + 1).add(slot.mul(4)).add(uint(part).mul(2)));
+    /** Part of a drawn meshlet from its packed blend range (see drawList): 0 drawn everywhere, 1 blended. */
+    const partOf = (packed: Node) => select(packed.bitAnd(0xffff00).equal(FULL_FADE_BITS), uint(0), uint(1));
     const cutCapacity = [cameraIndexCapacity, shadowIndexCapacity];
     const indexBuffers = [cameraIndex, shadowIndex];
 
-    const shadowThreshold: Node = ctx.errorThreshold.mul(ctx.shadowErrorScale);
-    const thresholds = [ctx.errorThreshold as Node, shadowThreshold];
+    // Per cut, the band of thresholds whose cuts are drawn, [t, t * k] (see lodBlend.ts), where t is the error
+    // threshold times the scale of the capacity controller (1 unless the pool's draw buffers would overflow). Shadow
+    // maps use a coarser band. The band widens with the camera's effective threshold: at about a pixel of error a
+    // level switch is not visible, so levels switch directly (no blending cost); from LOD_BLEND_FULL pixels up the
+    // band is `lodBlend` wide. loadBands() reads all this into variables at the top of each kernel that needs it (the
+    // scale is an atomic, and atomics are statements in TSL, not expressions).
+    let bands: { low: Node; high: Node; fadeScale: Node }[] = [];
+    const loadBands = () => {
+      const cameraScale = getState(S_SCALE).toVar();
+      const shadowScale = getState(S_SCALE + 1).toVar();
+      const width: Node = float(1).add((ctx.lodBlendMax as Node).sub(1).mul(smoothstep(LOD_BLEND_FROM, LOD_BLEND_FULL, (ctx.errorThreshold as Node).mul(cameraScale)))).toVar();
+      const blending: Node = width.greaterThan(1.001).toVar();
+      const fadeScale = select(blending, float(LOD_FADE_STEPS).div(logNode(width)), float(0)).toVar();
+      bands = [0, 1].map((cut) => {
+        // Shadows are never finer than the camera's detail: they coarsen with it, and on their own when their buffer fills.
+        const scale = cut === 0 ? cameraScale : maxNode(cameraScale, shadowScale);
+        const t: Node = (cut === 0 ? ctx.errorThreshold : ctx.errorThreshold.mul(ctx.shadowErrorScale)).mul(scale).toVar();
+        return { low: t, high: select(blending, t.mul(width), t).toVar(), fadeScale };
+      });
+    };
     const minPixelsGlobal: Node = ctx.minPixelRadius;
     const occlusion = ctx.occlusion;
 
@@ -637,7 +700,7 @@ export class GeometryPool {
     /** Hidden behind the occluders; the sphere grows by the error threshold (occluders are LOD-simplified). */
     const occludedSphere = (occlusionOn: Node, worldCenter: Node, radius: Node) => {
       const viewCenter: Node = (ctx.viewMatrix as Node).mul(vec4(worldCenter, 1)).xyz.toVar();
-      const margin = viewCenter.z.abs().mul(ctx.errorThreshold).div(ctx.projScale);
+      const margin = viewCenter.z.abs().mul(bands[0].high).div(ctx.projScale);
       return occlusionOn.and((occlusion.activeNode as Node).equal(1)).and(occlusion.occluded(viewCenter, radius.add(margin)));
     };
 
@@ -653,13 +716,13 @@ export class GeometryPool {
       If(i.lessThan(uint(PER_MESH_COUNTERS)), () => {
         atomicStore(counters.element(i), uint(0));
       });
-      If(i.lessThan(this.meshSlots.mul(4)), () => {
-        // count and start of slot i>>1 for both cuts
-        const cut = i.div(this.meshSlots.mul(2));
-        const rest = i.mod(this.meshSlots.mul(2));
-        atomicStore(counters.element(uint(PER_MESH_COUNTERS).add(cut.mul(slots * 2)).add(rest)), uint(0));
+      If(i.lessThan(this.meshSlots.mul(8)), () => {
+        // count and start of both parts of slot i>>2, for both cuts
+        const cut = i.div(this.meshSlots.mul(4));
+        const rest = i.mod(this.meshSlots.mul(4));
+        atomicStore(counters.element(uint(PER_MESH_COUNTERS).add(cut.mul(slots * 4)).add(rest)), uint(0));
       });
-    })().compute(Math.max(PER_MESH_COUNTERS, slots * 4), [64]);
+    })().compute(Math.max(PER_MESH_COUNTERS, slots * 8), [64]);
 
     // ---------- 1. cells ----------
     const cellNode = Fn(() => {
@@ -717,7 +780,7 @@ export class GeometryPool {
       pixelsAtMin: Node,
       pixelsAtMax: Node
     ) => {
-      const threshold = thresholds[cut];
+      const { low, high } = bands[cut];
       const first = uint(0xffffffff).toVar();
       const last = uint(0).toVar();
       const possibleMeshlets = uint(0).toVar();
@@ -729,14 +792,15 @@ export class GeometryPool {
         const size = uint(l0.y).toVar();
         const possible = l0.z
           .mul(pixelsAtMax)
-          .lessThanEqual(threshold)
-          .and(l0.w.greaterThanEqual(ERROR_INFINITY * 0.5).or(l0.w.mul(pixelsAtMin).greaterThan(threshold)));
-        // Every meshlet of the level passes for any distance in [min, max]: largest own error at the nearest
-        // distance, smallest parent error at the farthest. Relative margin keeps float rounding on our side.
+          .lessThanEqual(high)
+          .and(l0.w.greaterThanEqual(ERROR_INFINITY * 0.5).or(l0.w.mul(pixelsAtMin).greaterThan(low)));
+        // Every meshlet of the level is drawn over every pixel for any distance in [min, max]: largest own error
+        // at the nearest distance below the band, smallest parent error at the farthest above it. Relative margin
+        // keeps float rounding on our side.
         const sure = l1.x
           .mul(pixelsAtMin)
-          .lessThanEqual(threshold.mul(1 - FAST_PATH_MARGIN))
-          .and(l1.y.greaterThanEqual(ERROR_INFINITY * 0.5).or(l1.y.mul(pixelsAtMax).greaterThan(threshold.mul(1 + FAST_PATH_MARGIN))));
+          .lessThanEqual(low.mul(1 - FAST_PATH_MARGIN))
+          .and(l1.y.greaterThanEqual(ERROR_INFINITY * 0.5).or(l1.y.mul(pixelsAtMax).greaterThan(high.mul(1 + FAST_PATH_MARGIN))));
         If(possible, () => {
           first.assign(minNode(first, levelFirst));
           last.assign(maxNode(last, levelFirst.add(size)));
@@ -766,8 +830,8 @@ export class GeometryPool {
             If(uint(k).lessThan(possibleMeshlets).and(base.add(k).lessThan(uint(maxDrawn))), () => {
               const meshletId = first.add(k).toVar();
               const triangleCount = info.element(meshletId).x.toVar();
-              const firstIndex = (atomicAdd(meshCount(cut, slot), triangleCount.mul(3)) as Node).toVar();
-              drawList.element(base.add(k + cut * maxDrawn)).assign(uvec4(instanceId, meshletId, firstIndex, triangleCount));
+              const firstIndex = (atomicAdd(meshCount(cut, slot, 0), triangleCount.mul(3)) as Node).toVar();
+              drawList.element(base.add(k + cut * maxDrawn)).assign(uvec4(instanceId, meshletId, firstIndex, triangleCount.bitOr(FULL_FADE_BITS)));
             });
           }
         }).Else(() => {
@@ -778,7 +842,8 @@ export class GeometryPool {
       });
     };
 
-    const instanceNode = Fn(() => {
+    /** Instance pass; `retry`: a later round of the same frame, redoing only the cuts that overflowed. */
+    const instancePass = (retry: boolean) => Fn(() => {
       // No early return before the barrier (WGSL needs uniform control flow there): workgroups past the
       // visible-cell count (the dispatch is rounded up) load no levels and process no instances.
       const cellIndex = workgroupId.x.add(workgroupId.y.mul(numWorkgroups.x)).toVar();
@@ -795,6 +860,7 @@ export class GeometryPool {
       If(valid.not(), () => {
         Return();
       });
+      loadBands();
 
       const objectSphere = meshRecord(slot, 0).toVar();
       const lodBounds = meshRecord(slot, 1).toVar();
@@ -813,6 +879,13 @@ export class GeometryPool {
         const noFrustum = ctx.frustumCulling.equal(0);
         const inCamera = noFrustum.or(frustumDistance(center, false).greaterThanEqual(radius.negate())).toVar();
         const inShadow = shadowOn.and(noFrustum.or(frustumDistance(center, true).greaterThanEqual(radius.negate()))).toVar();
+        if (retry) {
+          // Atomics are statements in TSL: load into variables before using them in expressions.
+          const redoCamera = getState(S_RETRY).toVar();
+          const redoShadow = getState(S_RETRY + 1).toVar();
+          inCamera.assign(inCamera.and(redoCamera.greaterThan(0.5)));
+          inShadow.assign(inShadow.and(redoShadow.greaterThan(0.5)));
+        }
         // Sub-pixel instances and instances beyond the draw distance: both cuts.
         const viewDistance = length((ctx.viewMatrix as Node).mul(vec4(center, 1)).xyz).toVar();
         const tooSmall = viewDistance.greaterThan(radius).and(radius.mul(ctx.projScale).div(viewDistance).lessThan(minPixels));
@@ -823,6 +896,7 @@ export class GeometryPool {
             inCamera.assign(bool(false));
             atomicAdd(counters.element(1), uint(1));
           });
+
           const lodCenter: Node = (ctx.viewMatrix as Node).mul(model.mul(vec4(lodBounds.xyz, 1)));
           const d = length(lodCenter.xyz).toVar();
           const r = lodBounds.w.mul(scale);
@@ -836,12 +910,18 @@ export class GeometryPool {
           });
         });
       });
-    })().compute(instanceArgsAttribute as unknown as number, [CULL_GROUP]);
+    })().compute((retry ? retryInstanceArgsAttribute : instanceArgsAttribute) as unknown as number, [CULL_GROUP]);
 
     // ---------- 3. meshlets ----------
     const meshletPass = (cut: number) => {
       const argsNode = Fn(() => {
         dispatchArgs(meshletArgs[cut], (atomicLoad(counter(cut, C_WORK)) as Node).toVar());
+      })().compute(1);
+      // In a retry round, only a cut being redone runs again (the others keep their work list and selection).
+      const retryArgsNode = Fn(() => {
+        const redo = getState(S_RETRY + cut).toVar();
+        const work = (atomicLoad(counter(cut, C_WORK)) as Node).toVar();
+        dispatchArgs(meshletArgs[cut], select(redo.greaterThan(0.5), work, uint(0)).toVar());
       })().compute(1);
       const passNode = Fn(() => {
         const item = workgroupId.x.add(workgroupId.y.mul(numWorkgroups.x)).toVar();
@@ -853,6 +933,8 @@ export class GeometryPool {
         const slot = work.w.bitAnd(0x7fffffff).toVar();
         const occlusionOn = work.w.shiftRight(31).equal(1);
         const { model, scale } = modelOf(instanceId);
+        loadBands();
+        const { low, high, fadeScale } = bands[cut];
         Loop({ start: work.y.add(localId.x), end: work.z, type: 'uint', condition: '<', update: MESHLET_GROUP }, ({ i }: { i: Node }) => {
           const meshletId = i;
           const boundsBase = meshletId.mul(MESHLET_BOUNDS_STRIDE / 4).toVar();
@@ -860,21 +942,31 @@ export class GeometryPool {
           const center = model.mul(vec4(cullSphere.xyz, 1)).xyz;
           let visible: Node = ctx.frustumCulling.equal(0).or(frustumDistance(center, cut === 1).greaterThanEqual(cullSphere.w.mul(scale).negate()));
           if (cut === 0) visible = visible.and(occludedSphere(occlusionOn, center, cullSphere.w.mul(scale)).not());
-          // LOD selection: draw this meshlet iff its own error is small enough but its parent's is not.
+          // LOD selection: draw this meshlet iff it is in the cut for some threshold of the band: its own error
+          // is small enough for the band's top, its parent's too large for the band's bottom.
           const errors = bounds.element(boundsBase.add(2));
-          const ownError = projectedError(model, scale, bounds.element(boundsBase), errors.x);
-          const parentError = projectedError(model, scale, bounds.element(boundsBase.add(1)), errors.y);
-          If(visible.and(ownError.lessThanEqual(thresholds[cut])).and(parentError.greaterThan(thresholds[cut])), () => {
+          const ownError = projectedError(model, scale, bounds.element(boundsBase), errors.x).toVar();
+          const parentError = projectedError(model, scale, bounds.element(boundsBase.add(1)), errors.y).toVar();
+          // Blend range: the steps of the band (log scale) between its own and its parent's error. Equal errors
+          // give equal steps, so a meshlet and the ones replacing it split the pixels between them exactly.
+          // Shadow maps blend the same way, per shadow-map texel (smoothed by the shadow filter).
+          const step = (error: Node) => uint(logNode(maxNode(error, 1e-30).div(low)).mul(fadeScale).round().clamp(0, LOD_FADE_STEPS));
+          const fadeLow = select(fadeScale.greaterThan(0), step(ownError), uint(0)).toVar();
+          const fadeHigh = select(fadeScale.greaterThan(0), step(parentError), uint(LOD_FADE_STEPS)).toVar();
+          const fade = fadeLow.shiftLeft(8).bitOr(fadeHigh.shiftLeft(16));
+          const drawn = visible.and(ownError.lessThanEqual(high)).and(parentError.greaterThan(low)).and(fadeHigh.greaterThan(fadeLow));
+          If(drawn, () => {
             const at = (atomicAdd(counter(cut, C_SELECTED), uint(1)) as Node).toVar();
             If(at.lessThan(uint(maxDrawn)), () => {
               const triangleCount = info.element(meshletId).x.toVar();
-              const firstIndex = (atomicAdd(meshCount(cut, slot), triangleCount.mul(3)) as Node).toVar();
-              drawList.element(at.add(cut * maxDrawn)).assign(uvec4(instanceId, meshletId, firstIndex, triangleCount));
+              const packed = triangleCount.bitOr(fade).toVar();
+              const firstIndex = (atomicAdd(meshCount(cut, slot, partOf(packed)), triangleCount.mul(3)) as Node).toVar();
+              drawList.element(at.add(cut * maxDrawn)).assign(uvec4(instanceId, meshletId, firstIndex, packed));
             });
           });
         });
       })().compute(meshletArgsAttributes[cut] as unknown as number, [MESHLET_GROUP]);
-      return [argsNode, passNode];
+      return { argsNode, retryArgsNode, passNode };
     };
 
     // ---------- 4. prefix: lay the meshes' regions out, write draw args and the expand dispatch ----------
@@ -883,16 +975,18 @@ export class GeometryPool {
         const start = uint(0).toVar();
         const capacity = uint(cutCapacity[cut]);
         Loop({ start: uint(0), end: this.meshSlots, type: 'uint', condition: '<' }, ({ i }: { i: Node }) => {
-          const requested = (atomicLoad(meshCount(cut, i)) as Node).toVar();
-          atomicStore(meshStart(cut, i), start);
-          const room = select(start.lessThan(capacity), capacity.sub(start), uint(0));
-          const args = uint(cut * slots * 5).add(i.mul(5)).toVar();
-          drawArgs.element(args).assign(minNode(requested, room));
-          drawArgs.element(args.add(1)).assign(uint(1));
-          drawArgs.element(args.add(2)).assign(start);
-          drawArgs.element(args.add(3)).assign(uint(0));
-          drawArgs.element(args.add(4)).assign(uint(0));
-          start.addAssign(requested);
+          for (const part of [0, 1]) {
+            const requested = (atomicLoad(meshCount(cut, i, part)) as Node).toVar();
+            atomicStore(meshStart(cut, i, part), start);
+            const room = select(start.lessThan(capacity), capacity.sub(start), uint(0));
+            const args = uint(cut * slots * 10 + part * 5).add(i.mul(10)).toVar();
+            drawArgs.element(args).assign(minNode(requested, room));
+            drawArgs.element(args.add(1)).assign(uint(1));
+            drawArgs.element(args.add(2)).assign(start);
+            drawArgs.element(args.add(3)).assign(uint(0));
+            drawArgs.element(args.add(4)).assign(uint(0));
+            start.addAssign(requested);
+          }
         });
         atomicStore(counter(cut, C_REQUESTED), start);
         const drawn = minNode(atomicLoad(counter(cut, C_SELECTED)) as Node, uint(maxDrawn)).toVar();
@@ -910,11 +1004,12 @@ export class GeometryPool {
         const drawSlot = at.add(cut * maxDrawn).toVar();
         const entry = drawListRead.element(drawSlot).toVar();
         const slot = uint(instanceColumn(entry.x, 4).w).toVar();
-        const regionStart = (atomicLoad(meshStart(cut, slot)) as Node).toVar();
+        const regionStart = (atomicLoad(meshStart(cut, slot, partOf(entry.w))) as Node).toVar();
         const firstTriangle = info.element(entry.y).y.div(3).toVar();
         const base = drawSlot.shiftLeft(LOCAL_VERTEX_BITS).toVar();
         const buffer = indexBuffers[cut];
-        Loop({ start: localId.x, end: entry.w, type: 'uint', condition: '<', update: EXPAND_GROUP }, ({ i }: { i: Node }) => {
+        const triangleCount = entry.w.bitAnd(255).toVar(); // the upper bits hold the blend range
+        Loop({ start: localId.x, end: triangleCount, type: 'uint', condition: '<', update: EXPAND_GROUP }, ({ i }: { i: Node }) => {
           const index = regionStart.add(entry.z).add(i.mul(3)).toVar();
           If(index.add(2).lessThan(uint(cutCapacity[cut])), () => {
             const packed = meshletTriangles.element(firstTriangle.add(i)).toVar();
@@ -925,15 +1020,73 @@ export class GeometryPool {
         });
       })().compute(expandArgsAttributes[cut] as unknown as number, [EXPAND_GROUP]);
 
+    // ---------- capacity: redo an overflowing cut in the same frame, steer the threshold scale between frames ----------
+    // A cut that does not fit its draw buffers would lose meshlets in arbitrary order (holes that flicker). The
+    // controller is on the GPU, so it reacts in the frame where the demand jumps (fast zoom, camera cut), not frames
+    // later after a readback: an overflowing cut is selected again at a coarser threshold before anything is drawn.
+    const fillOf = (cut: number): Node => {
+      const requested = (atomicLoad(counter(cut, C_REQUESTED)) as Node).toVar();
+      const selected = (atomicLoad(counter(cut, C_SELECTED)) as Node).toVar();
+      return maxNode(float(requested).div(cutCapacity[cut]), float(selected).div(maxDrawn));
+    };
+    const checkNode = Fn(() => {
+      const any = bool(false).toVar();
+      for (const cut of [0, 1]) {
+        const fill = fillOf(cut).toVar();
+        const scale = getState(S_SCALE + cut).toVar();
+        setState(S_RETRY + cut, 0);
+        If(fill.greaterThan(1).and(scale.lessThan(ctx.lodScaleLimit)), () => {
+          // Triangles go with about 1 / threshold^2: aim at the target fill, at least 10% coarser.
+          setState(S_SCALE + cut, minNode(scale.mul(sqrt(fill.div(FILL_TARGET)).clamp(1.1, 4)), ctx.lodScaleLimit));
+          setState(S_RETRY + cut, 1);
+          any.assign(true);
+          for (const c of [C_SELECTED, C_DRAWN, C_SURVIVED, C_WORK, C_REQUESTED]) atomicStore(counter(cut, c), uint(0));
+          if (cut === 0) atomicStore(counters.element(1), uint(0));
+          Loop({ start: uint(0), end: this.meshSlots, type: 'uint', condition: '<' }, ({ i }: { i: Node }) => {
+            atomicStore(meshCount(cut, i, 0), uint(0));
+            atomicStore(meshCount(cut, i, 1), uint(0));
+          });
+        });
+      }
+      retryInstanceArgs.element(0).assign(select(any, instanceArgs.element(0), uint(0)));
+      retryInstanceArgs.element(1).assign(select(any, instanceArgs.element(1), uint(1)));
+      retryInstanceArgs.element(2).assign(uint(1));
+    })().compute(1);
+    // Between frames: coarsen a little when a buffer is nearly full, give detail back while there is room.
+    const steerNode = Fn(() => {
+      for (const cut of [0, 1]) {
+        const fill = fillOf(cut).toVar();
+        const scale = getState(S_SCALE + cut).toVar();
+        If(fill.greaterThan(FILL_HIGH), () => {
+          scale.assign(scale.mul(minNode(sqrt(fill.div(FILL_TARGET)), 1.03)));
+        }).ElseIf(fill.lessThan(FILL_LOW), () => {
+          scale.assign(scale.div(1.01));
+        });
+        // Within [1, limit] (the limit drops when the user raises the threshold).
+        setState(S_SCALE + cut, maxNode(minNode(scale, ctx.lodScaleLimit), 1));
+        setState(S_FILL + cut, fill);
+      }
+    })().compute(1);
+
+    const meshlets = [meshletPass(0), meshletPass(1)];
+    const prefixes = [prefixPass(0), prefixPass(1)];
+    const instanceNode = instancePass(false);
+    const instanceRetryNode = instancePass(true);
+    const retryRounds: THREE.ComputeNode[] = [];
+    for (let round = 0; round < RETRY_ROUNDS; round++) {
+      retryRounds.push(checkNode, instanceRetryNode);
+      for (const m of meshlets) retryRounds.push(m.retryArgsNode, m.passNode);
+      retryRounds.push(...prefixes);
+    }
     this.computeNodes = [
       resetNode,
       cellNode,
       cellArgsNode,
       instanceNode,
-      ...meshletPass(0),
-      ...meshletPass(1),
-      prefixPass(0),
-      prefixPass(1),
+      ...meshlets.flatMap((m) => [m.argsNode, m.passNode]),
+      ...prefixes,
+      ...retryRounds,
+      steerNode,
       expandPass(0),
       expandPass(1),
     ];
@@ -969,6 +1122,7 @@ export class GeometryPool {
       vgWorldNormal.assign(worldNormal);
 
       vgMeshletVarying.assign(float(meshletId));
+      vgFadeVarying.assign(vec2(float(entry.w.shiftRight(8).bitAnd(255)), float(entry.w.shiftRight(16).bitAnd(255))));
       vgLodVarying.assign(float(meshletInfo.z));
       vgInstanceVarying.assign(float(instanceId));
       vgTintVarying.assign(tintAndSlot.xyz.mul(unpackRgba8(attrs.x).xyz));
@@ -980,6 +1134,11 @@ export class GeometryPool {
   /** Stats of the last computed cut, from a readback of the counters buffer. */
   async readCounters(renderer: THREE.WebGPURenderer) {
     const words = new Uint32Array(await renderer.getArrayBufferAsync(this.countersAttribute));
+    const state = Array.from(words.subarray(this.lodStateBase, this.lodStateBase + LOD_STATE_SIZE), (w) => w / STATE_FIXED);
+    const scale = [state[S_SCALE], state[S_SCALE + 1]];
+    const fill = [state[S_FILL], state[S_FILL + 1]];
+    // Still steering: keep redoing the cut each frame until it settles (a still camera would otherwise skip it).
+    this.controllerActive = fill.some((f, c) => f > FILL_HIGH || (f < FILL_LOW && scale[c] > 1.0001));
     const slots = this.meshSlotCapacity;
     const cut = (c: number) => ({
       selected: words[2 + c * CUT_COUNTERS + C_SELECTED],
@@ -987,13 +1146,16 @@ export class GeometryPool {
       survived: words[2 + c * CUT_COUNTERS + C_SURVIVED],
       requestedTriangles: words[2 + c * CUT_COUNTERS + C_REQUESTED] / 3,
     });
-    const perMesh = (c: number, slot: number) => words[PER_MESH_COUNTERS + (c * slots + slot) * 2] / 3;
-    return { camera: cut(0), shadow: cut(1), occluded: words[1], perMesh };
+    const perMesh = (c: number, slot: number) => (words[PER_MESH_COUNTERS + (c * slots + slot) * 4] + words[PER_MESH_COUNTERS + (c * slots + slot) * 4 + 2]) / 3;
+    return { camera: cut(0), shadow: cut(1), occluded: words[1], perMesh, scale, fill };
   }
 
-  /** Byte offset of a mesh's draw args for a cut (0: camera, 1: shadow) in `drawArgsAttribute`. */
-  drawArgsOffset(cut: number, slot: number) {
-    return (cut * this.meshSlotCapacity + slot) * 20;
+  /**
+   * Byte offset of a mesh's draw args for a cut (0: camera, 1: shadow) and part (0: meshlets drawn over every pixel,
+   * 1: meshlets inside an LOD blend band, drawn with the blend mask) in `drawArgsAttribute`.
+   */
+  drawArgsOffset(cut: number, slot: number, part = 0) {
+    return ((cut * this.meshSlotCapacity + slot) * 2 + part) * 20;
   }
 
   dispose() {

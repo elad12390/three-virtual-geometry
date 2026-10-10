@@ -48,6 +48,7 @@ Don't publish from a laptop.
 | `src/core/preprocess/buildVirtualMesh.ts` | Builds the cluster DAG (meshoptimizer clusterize and simplify, with locked borders). |
 | `src/core/preprocess/partition.ts` | Groups meshlets by shared edges. |
 | `src/core/preprocess/voxelProxy.ts` | Voxel proxy surfaces for coarse levels of aggregate geometry. |
+| `src/core/preprocess/aggregate.ts` | Piece-by-piece simplification and thinning of foliage-like groups. |
 | `src/core/io/serialize.ts` | `.vgeo` binary format. |
 | `src/core/io/cache.ts` | IndexedDB build cache. Bump `VG_BUILD_VERSION` when build output changes. |
 | `src/core/runtime/VirtualGeometry.ts` | Context: settings, pools, per-frame update, stats, threshold controller. |
@@ -55,6 +56,8 @@ Don't publish from a laptop.
 | `src/core/runtime/VirtualMesh.ts` | A three.js `Mesh` that draws its region of a pool with an indirect draw. |
 | `src/core/runtime/OcclusionCulling.ts` | Depth pre-pass, hierarchical depth buffer, automatic on/off tuning. |
 | `src/core/runtime/vgMaterial.ts` | `vgUv`, `vgTexture` and material rewiring. |
+| `src/core/runtime/lodBlend.ts` | LOD blending: per-pixel cut within the blend band (fragment mask, CPU reference). |
+| `src/core/runtime/velocity.ts` | Motion vectors of pulled vertices, for TAA. |
 | `src/core/runtime/cut.ts` | CPU reference of the GPU selection, used by tests. |
 | `src/core/import/` | `vg.add()`: grouping an `Object3D` into instanced meshes, material conversion. |
 | `scripts/bake.ts` | The `vg-bake` CLI. |
@@ -64,7 +67,13 @@ Don't publish from a laptop.
 ## Invariants
 
 - A meshlet is drawn when `projectedError <= threshold < projectedParentError`. Errors must grow monotonically up
-  the DAG; `tests/preprocess.test.ts` checks it. Breaking it causes holes or overlaps.
+  the DAG; `tests/preprocess.test.ts` checks it. Breaking it causes holes or overlaps. With LOD blending
+  (`lodBlend`) the camera cut is every meshlet in the cut for some threshold of [t, t * lodBlend], and each one owns
+  the blend steps [f(error), f(parentError)) of the per-pixel pattern; `tests/cut.test.ts` checks that every step is a
+  complete cut without overlaps. Meshlets inside a band go to part 1 of their mesh's index region and are drawn by
+  `VirtualMesh.blendPart` (masked material); the rest stay in part 0, drawn without discard.
+- Draw capacity is enforced on the GPU (GeometryPool check/steer passes): an overflowing cut is redone in the same
+  frame at a coarser threshold. The controller state lives in the counters buffer as fixed point.
 - Meshlets have at most 128 triangles (`MAX_MESHLET_TRIANGLES`); the draw index encodes `slot << 7 | local`.
 - Storage-buffer bindings must stay under 128 MB: pools cap their buffers by `maxPoolBytes`.
 - In compute shaders, `workgroupBarrier()` must be reached in uniform control flow: no early return before it.

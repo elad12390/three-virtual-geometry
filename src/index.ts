@@ -22,7 +22,8 @@ export type { VirtualGeometryCacheOptions, VirtualGeometryCachedBuildOptions } f
 export { decodeVirtualMesh, encodeVirtualMesh, loadVirtualMesh, VirtualMeshFormatError, VG_FORMAT_VERSION } from './core/io/serialize.js';
 export type { VirtualMeshEncodeOptions } from './core/io/serialize.js';
 
-export { instanceGuaranteedRange, instanceMeshletRange, selectCut, verifyCutCoverage } from './core/runtime/cut.js';
+export { instanceGuaranteedRange, instanceMeshletRange, selectBlendCut, selectCut, verifyCutCoverage, verifyCutOverlap } from './core/runtime/cut.js';
+export { lodFadeRange, LOD_FADE_STEPS } from './core/runtime/lodBlend.js';
 export type { CutView } from './core/runtime/cut.js';
 export { VirtualMesh, vgWorldNormal, vgInstanceOrigin } from './core/runtime/VirtualMesh.js';
 export { vgUv, vgTexture, vgNormalMap, bindVirtualGeometryTextures } from './core/runtime/vgMaterial.js';

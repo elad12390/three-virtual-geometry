@@ -202,6 +202,8 @@ export class OcclusionCulling {
   private proxyOf(mesh: VirtualMesh) {
     let proxy = this.proxies.get(mesh);
     if (!proxy) {
+      // The meshlets drawn over every pixel only: the blended ones are left out, which only makes the occluders a
+      // little less complete (never culls anything visible), and keeps this depth pass free of discards.
       proxy = new THREE.Mesh(mesh.cameraGeometry, new THREE.MeshBasicNodeMaterial({ colorWrite: false }));
       proxy.frustumCulled = false;
       this.depthScene.add(proxy);
@@ -260,9 +262,13 @@ export class OcclusionCulling {
 
     // The depth scene has no lights, so this renders no shadow maps.
     const previous = renderer.getRenderTarget();
+    // This runs inside the caller's render, which may be a pass with MRT outputs: depth only here.
+    const previousMrt = renderer.getMRT();
+    renderer.setMRT(null);
     renderer.setRenderTarget(this.renderTarget);
     renderer.render(this.depthScene, camera);
     renderer.setRenderTarget(previous);
+    renderer.setMRT(previousMrt);
     return this.buildNodes;
   }
 

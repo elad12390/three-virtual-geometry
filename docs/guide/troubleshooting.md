@@ -89,6 +89,9 @@ Shadow maps use a coarser level of detail than the camera (`vg.shadowErrorScale`
 ## Detail visibly changes while moving
 
 - Lower `vg.errorThreshold.value` (default `1` pixel). At `0.5`, changes are practically invisible, at a higher cost.
+- Keep `vg.lodBlend` at `2` or more (it blends levels over a band instead of switching them), and use temporal
+  anti-aliasing with `vg.lodBlendTemporal = true` to turn the blend into a smooth crossfade. See
+  [Settings](/guide/settings#smooth-detail-changes).
 - Don't set a `triangleBudget` unless you need one: with a fixed threshold, detail changes only with distance, a few
   clusters at a time. A budget changes the threshold for the whole screen at once.
 - If `vg.lastStats.capacityUse` is close to `1`, the draw buffers are nearly full and the engine is coarsening detail

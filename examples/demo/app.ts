@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+import { traa } from 'three/addons/tsl/display/TRAANode.js';
+import { mrt, output, pass, velocity } from 'three/tsl';
 import { VirtualGeometry, VG_DEBUG_MODES, virtualGeometryLimits, type VirtualGeometryStats } from '../../src/index';
 import type { BenchPose } from './bench';
 
@@ -29,7 +31,11 @@ export class DemoApp {
     frustumCulling: true,
     freezeLOD: false,
     uncapped: new URLSearchParams(location.search).has('uncapped'),
+    // Temporal anti-aliasing: smooths alpha-tested foliage and turns the LOD blend pattern into a crossfade.
+    taa: new URLSearchParams(location.search).get('taa') !== '0',
   };
+  /** Scene pass + TRAA, built on first use. */
+  private pipeline: THREE.RenderPipeline | null = null;
 
   private readonly statsEl = el('stats');
   private readonly hud = {
@@ -76,7 +82,9 @@ export class DemoApp {
 
   constructor() {
     this.renderer = new THREE.WebGPURenderer({ antialias: true, trackTimestamp: new URLSearchParams(location.search).has('timestamps') });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // `?dpr=1` renders at CSS resolution (e.g. about 1080p on a Retina screen); default: the screen's, at most 2.
+    const dpr = Number(new URLSearchParams(location.search).get('dpr'));
+    this.renderer.setPixelRatio(dpr > 0 ? dpr : Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     document.body.appendChild(this.renderer.domElement);
@@ -99,6 +107,8 @@ export class DemoApp {
     this.gui.add(this.settings, 'frustumCulling').name('frustum culling');
     this.gui.add(this.settings, 'freezeLOD').name('freeze LOD/culling');
     this.gui.add(this.settings, 'uncapped').name('uncapped fps (no vsync)').onChange(() => this.start());
+    this.gui.add(this.settings, 'taa').name('temporal AA');
+    this.gui.add(this.vg, 'lodBlend', 1, 4, 0.1).name('LOD blend band (x)');
 
     // Embedded in the docs (?embed): compact HUD, settings collapsed, and the page can pause rendering.
     if (new URLSearchParams(location.search).has('embed')) {
@@ -229,9 +239,24 @@ export class DemoApp {
     const frustumCulling = s.frustumCulling ? 1 : 0;
     if (this.vg.frustumCulling.value !== frustumCulling) this.vg.frustumCulling.value = frustumCulling;
     this.vg.freeze = s.freezeLOD;
+    // With TAA the LOD blend pattern changes every frame and is averaged into a smooth crossfade.
+    this.vg.lodBlendTemporal = s.taa;
     if (!this.vg.autoUpdate) this.vg.update(this.renderer, this.camera);
-    this.renderer.render(this.scene, this.camera); // runs the VirtualGeometry update first (autoUpdate)
+    // Both run the VirtualGeometry update first (autoUpdate).
+    if (s.taa) this.renderPipeline().render();
+    else this.renderer.render(this.scene, this.camera);
     this.cpuMs = this.cpuMs * 0.9 + (performance.now() - t0) * 0.1;
+  }
+
+  private renderPipeline() {
+    if (!this.pipeline) {
+      const scenePass = pass(this.scene, this.camera, { samples: 0 }); // TRAA needs single-sample targets
+      scenePass.setMRT(mrt({ output, velocity }));
+      const color = scenePass.getTextureNode('output');
+      const node = traa(color, scenePass.getTextureNode('depth'), scenePass.getTextureNode('velocity'), this.camera);
+      this.pipeline = new THREE.RenderPipeline(this.renderer, node);
+    }
+    return this.pipeline;
   }
 
   private updateStats(now: number) {
@@ -262,7 +287,8 @@ export class DemoApp {
     h.cpu.textContent = this.cpuMs.toFixed(2);
     this.drawGraph();
 
-    const threshold = this.vg.errorThreshold.value;
+    // The effective threshold: the set one times the GPU capacity controller's factor.
+    const threshold = this.vg.errorThreshold.value * (this.lastStats?.thresholdScale ?? 1);
     h.threshold.innerHTML = `${threshold.toFixed(2)}<small>px</small>`;
     h.extra.textContent = this.extraStats;
     if (!s) return;

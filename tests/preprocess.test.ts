@@ -2,6 +2,8 @@ import { expect, test } from 'vitest';
 import * as THREE from 'three';
 import { buildVirtualMesh, fromBufferGeometry, partitionMeshlets, MAX_MESHLET_TRIANGLES } from '../src/index';
 import { ERROR_INFINITY, MESHLET_BOUNDS_STRIDE, MESHLET_INFO_STRIDE } from '../src/core/constants';
+import { selectCut, verifyCutCoverage } from '../src/index';
+import { leafCards } from './leafCards';
 
 test('DAG builder invariants', async () => {
   const assert = (cond: unknown, msg: string) => {
@@ -70,6 +72,18 @@ test('DAG builder invariants', async () => {
   await checkDag('noisy sphere', noisySphere());
   await checkDag('terrain', terrain());
   await checkDag('terrain (prune)', terrain(), { prune: true });
+
+  // Leaf cards: separate pieces, simplified piece by piece and thinned (aggregate.ts).
+  const leaves = await checkDag('leaf cards', leafCards());
+  assert((leaves.stats.aggregateGroups ?? 0) > 0, 'leaf cards: groups are simplified piece by piece');
+  const level1 = leaves.levelRanges[3];
+  let level1Triangles = 0;
+  for (let i = leaves.levelRanges[2]; i < leaves.levelRanges[2] + level1; i++) level1Triangles += leaves.meshletInfo[i * MESHLET_INFO_STRIDE];
+  assert(level1Triangles <= leaves.stats.leafTriangles * 0.6, `leaf cards: the first level halves the triangles (${level1Triangles} of ${leaves.stats.leafTriangles})`);
+  for (const distance of [5, 20, 60, 200, 800]) {
+    const view = { viewMatrix: new THREE.Matrix4().makeTranslation(0, -8, -distance).elements, projScale: 1000, near: 0.1 };
+    assert(verifyCutCoverage(leaves, selectCut(leaves, view, 1)).length === 0, `leaf cards: complete cut at ${distance} m`);
+  }
 
   const groups = partitionMeshlets(
     Array.from({ length: 40 }, (_, i) => ({ boundaryEdges: [i, i + 1], center: [i, 0, 0] as [number, number, number] })),

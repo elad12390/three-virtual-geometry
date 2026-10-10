@@ -8,16 +8,17 @@ import { createHash } from 'node:crypto';
 import * as THREE from 'three';
 import { buildVirtualMesh, fromBufferGeometry, VG_BUILD_VERSION } from '../src/index';
 import { makeBroadleaf } from '../examples/demo/assets';
+import { leafCards } from './leafCards';
 
 test('build output matches the recorded fingerprint for VG_BUILD_VERSION', async () => {
-  const RECORDED = { version: 3, fingerprint: '2984f6a9268acdc0' };
+  const RECORDED = { version: 8, fingerprint: '127c1b4327496770' };
 
   const assert = (cond: unknown, msg: string) => {
     expect(cond, msg).toBeTruthy();
   };
 
   const hash = createHash('sha256');
-  for (const source of [fromBufferGeometry(new THREE.TorusKnotGeometry(1, 0.3, 160, 24)), makeBroadleaf(9)]) {
+  for (const source of [fromBufferGeometry(new THREE.TorusKnotGeometry(1, 0.3, 160, 24)), makeBroadleaf(9), fromBufferGeometry(leafCards())]) {
     const data = (await buildVirtualMesh(source)) as unknown as Record<string, unknown>;
     for (const key of Object.keys(data).sort()) {
       // The DAG links (replacement*) are CPU-only and never cached, so they cannot make a cached build stale.
